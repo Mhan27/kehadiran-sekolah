@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Buku Kehadiran — SMP Muhammadiyah 7 Surabaya</title>
+<title>Buku Kehadiran — Sistem Presensi Guru & Karyawan</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -117,20 +117,10 @@
     content:"";position:absolute;inset:14px;border:1px solid rgba(201,151,63,.35);border-radius:8px;pointer-events:none;
   }
   .seal{
-    width:140px;
-    height:140px;
-    border:none;
-    background:transparent;
-    display:flex;
-    align-items:center;
-    justify-content:center;
+    width:88px;height:88px;border-radius:50%;border:2px solid var(--gold-500);
+    display:flex;align-items:center;justify-content:center;color:var(--gold-400);
+    font-family:var(--font-display);font-size:.72rem;text-align:center;line-height:1.3;letter-spacing:.05em;
     margin-bottom:28px;
-    padding:0;
-  }
-  .seal img{
-    width:100%;
-    height:100%;
-    object-fit:contain;
   }
   .ledger-left h1{font-size:1.9rem;font-weight:600;margin:0 0 8px;color:#fff;line-height:1.25;}
   .ledger-left p{color:#c7cede;font-size:.9rem;line-height:1.6;margin:0;}
@@ -208,9 +198,7 @@
   <div class="ledger-cover">
     <div class="ledger-left">
       <div>
-        <div class="seal">
-          <img src="https://i.imgur.com/8Z7XQjL.png" alt="SMP Muhammadiyah 7 Surabaya">
-        </div>
+        <div class="seal">BUKU<br>INDUK<br>KEHADIRAN</div>
         <h1>Buku Kehadiran Guru &amp; Karyawan</h1>
         <p>Satu akses terpadu untuk mencatat kehadiran, keterlambatan, dan menyusun rekap harian, bulanan, hingga tahunan.</p>
       </div>
@@ -408,8 +396,8 @@
             bukan lewat halaman ini. Buka file tersebut dengan editor teks, cari baris berikut
             di dalam tag <span class="mono">&lt;script type="module"&gt;</span>:
           </p>
-          <pre class="mono" style="background:#faf8f2;border:1px solid #e7e0cf;border-radius:8px;padding:12px 14px;font-size:.78rem;overflow-x:auto;">const ADMIN_USERNAME = "admin";
-const ADMIN_PASSWORD = "admin123";</pre>
+          <pre class="mono" style="background:#faf8f2;border:1px solid #e7e0cf;border-radius:8px;padding:12px 14px;font-size:.78rem;overflow-x:auto;">const ADMIN_USERNAME = "endang";
+const ADMIN_PASSWORD = "endang123";</pre>
           <p style="font-size:.85rem;color:var(--ink-soft);line-height:1.6;">
             Ganti nilainya, simpan file, lalu unggah ulang ke GitHub.
           </p>
@@ -527,6 +515,8 @@ document.getElementById("loginForm").addEventListener("submit", async (e)=>{
     if(username !== ADMIN_USERNAME || pass !== ADMIN_PASSWORD){
       throw new Error("wrong-credentials");
     }
+    // Login anonim ke Firebase hanya untuk membuka akses Firestore
+    // (lihat Firestore Rules di PANDUAN.md) — pengguna tidak melihat ini.
     await signInAnonymously(auth);
     localStorage.setItem("bk_username", username);
   }catch(err){
@@ -695,15 +685,10 @@ document.getElementById("btnSavePegawai").addEventListener("click", async ()=>{
 
 async function deletePegawai(id){
   if(!confirm("Hapus pegawai ini? Riwayat kehadiran terkait tidak akan otomatis terhapus.")) return;
-  try {
-    await deleteDoc(doc(db,"pegawai",id));
-    await loadPegawai();
-    renderPegawaiTable();
-    toast("✅ Pegawai dihapus.");
-  } catch (e) {
-    console.error("Gagal hapus pegawai:", e);
-    toast("❌ Gagal menghapus pegawai.");
-  }
+  await deleteDoc(doc(db,"pegawai",id));
+  await loadPegawai();
+  renderPegawaiTable();
+  toast("Pegawai dihapus.");
 }
 
 /* ---------------------------------------------------------------------
@@ -782,7 +767,7 @@ async function simpanAbsensiBaris(tr, pegawai, tanggal){
       tanggal, status, jamMasuk: status==="Hadir"?jamMasuk:"", menitTerlambat, keterangan
     });
     toast(`✅ Kehadiran ${pegawai.nama} disimpan.`);
-    renderAbsensi();
+    renderAbsensi(); // Segar ulang tabel setelah simpan
   } catch (e) {
     console.error("Gagal simpan absensi:", e);
     toast("❌ Gagal menyimpan: cek aturan Firestore atau koneksi.");
@@ -825,3 +810,172 @@ async function renderDashboard(){
       datasets:[{ data:[counts.Hadir,counts.Izin,counts.Sakit,counts.Alpa,counts.Cuti],
         backgroundColor:["#2f6f4e","#a67c1e","#6b7280","#b85c38","#3c4f8c"] }]
     },
+    options:{ plugins:{ legend:{ position:"bottom", labels:{ boxWidth:12, font:{family:"Work Sans"} } } } }
+  });
+
+  const top = Object.entries(terlambatPerOrang).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const topWrap = document.getElementById("topTerlambat");
+  if(top.length===0){
+    topWrap.innerHTML = `<div class="empty">Belum ada catatan keterlambatan bulan ini.</div>`;
+  }else{
+    topWrap.innerHTML = `<table><thead><tr><th>Nama</th><th>Kali Terlambat</th></tr></thead><tbody>
+      ${top.map(([nama,c])=>`<tr><td>${nama}</td><td class="mono">${c}×</td></tr>`).join("")}
+    </tbody></table>`;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   LAPORAN — HARIAN / BULANAN / TAHUNAN
+--------------------------------------------------------------------- */
+document.querySelectorAll(".tab").forEach(t=>{
+  t.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".tabpanel").forEach(x=>x.classList.add("hidden"));
+    t.classList.add("active");
+    document.getElementById("tab-"+t.dataset.tab).classList.remove("hidden");
+    if(t.dataset.tab==="harian") renderLaporanHarian();
+    if(t.dataset.tab==="bulanan") renderLaporanBulanan();
+    if(t.dataset.tab==="tahunan") renderLaporanTahunan();
+  });
+});
+document.getElementById("lapHarianTanggal").addEventListener("change", renderLaporanHarian);
+document.getElementById("lapBulananBulan").addEventListener("change", renderLaporanBulanan);
+document.getElementById("lapTahunanTahun").addEventListener("change", renderLaporanTahunan);
+
+let lastHarianRows = [], lastBulananRows = [], lastTahunanRows = [];
+
+async function renderLaporanHarian(){
+  const tanggal = document.getElementById("lapHarianTanggal").value || todayStr();
+  const data = await getKehadiranByTanggal(tanggal);
+  const rows = PEGAWAI.map(p=>{
+    const r = data[p.id];
+    return {
+      nama:p.nama, jenis: p.jenis==="guru"?"Guru":"Karyawan",
+      status: r?r.status:"-",
+      jamMasuk: r?.jamMasuk || "-",
+      terlambat: r && r.menitTerlambat>0 ? `+${r.menitTerlambat} menit` : (r? "Tepat waktu":"-"),
+      keterangan: r?.keterangan || ""
+    };
+  });
+  lastHarianRows = rows;
+  const tbody = document.getElementById("lapHarianTbody");
+  tbody.innerHTML = rows.map(r=>`<tr>
+    <td>${r.nama}</td><td>${r.jenis}</td><td>${r.status==="-"?"-":badgeStatus(r.status)}</td>
+    <td class="mono">${r.jamMasuk}</td><td class="mono">${r.terlambat}</td><td>${r.keterangan}</td>
+  </tr>`).join("");
+  document.getElementById("lapHarianEmpty").classList.toggle("hidden", rows.length>0);
+}
+
+async function renderLaporanBulanan(){
+  const ym = document.getElementById("lapBulananBulan").value || todayStr().slice(0,7);
+  const snap = await getDocs(collection(db,"kehadiran"));
+  const bulan = snap.docs.map(d=>d.data()).filter(k=>k.tanggal && k.tanggal.startsWith(ym));
+
+  const perOrang = {};
+  PEGAWAI.forEach(p=> perOrang[p.id] = {nama:p.nama, Hadir:0,Izin:0,Sakit:0,Alpa:0,Cuti:0, kaliTerlambat:0, totalMenit:0});
+  bulan.forEach(k=>{
+    if(!perOrang[k.idPegawai]) perOrang[k.idPegawai] = {nama:k.namaPegawai, Hadir:0,Izin:0,Sakit:0,Alpa:0,Cuti:0, kaliTerlambat:0, totalMenit:0};
+    perOrang[k.idPegawai][k.status] = (perOrang[k.idPegawai][k.status]||0)+1;
+    if(k.menitTerlambat>0){
+      perOrang[k.idPegawai].kaliTerlambat++;
+      perOrang[k.idPegawai].totalMenit += k.menitTerlambat;
+    }
+  });
+  const rows = Object.values(perOrang);
+  lastBulananRows = rows;
+  const tbody = document.getElementById("lapBulananTbody");
+  tbody.innerHTML = rows.map(r=>`<tr>
+    <td>${r.nama}</td><td class="mono">${r.Hadir}</td><td class="mono">${r.Izin}</td><td class="mono">${r.Sakit}</td>
+    <td class="mono">${r.Alpa}</td><td class="mono">${r.Cuti}</td><td class="mono">${r.kaliTerlambat}×</td><td class="mono">${r.totalMenit} mnt</td>
+  </tr>`).join("");
+  document.getElementById("lapBulananEmpty").classList.toggle("hidden", rows.length>0);
+}
+
+async function renderLaporanTahunan(){
+  const tahun = document.getElementById("lapTahunanTahun").value || new Date().getFullYear();
+  const snap = await getDocs(collection(db,"kehadiran"));
+  const semua = snap.docs.map(d=>d.data()).filter(k=>k.tanggal && k.tanggal.startsWith(String(tahun)));
+
+  const namaBulan = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+  const perBulan = namaBulan.map((nm,i)=>({bulan:nm, idx:i, Hadir:0,Izin:0,Sakit:0,Alpa:0,Cuti:0, kaliTerlambat:0}));
+  semua.forEach(k=>{
+    const m = parseInt(k.tanggal.slice(5,7),10)-1;
+    perBulan[m][k.status] = (perBulan[m][k.status]||0)+1;
+    if(k.menitTerlambat>0) perBulan[m].kaliTerlambat++;
+  });
+  lastTahunanRows = perBulan;
+  const tbody = document.getElementById("lapTahunanTbody");
+  tbody.innerHTML = perBulan.map(r=>`<tr>
+    <td>${r.bulan}</td><td class="mono">${r.Hadir}</td><td class="mono">${r.Izin}</td><td class="mono">${r.Sakit}</td>
+    <td class="mono">${r.Alpa}</td><td class="mono">${r.Cuti}</td><td class="mono">${r.kaliTerlambat}×</td>
+  </tr>`).join("");
+
+  const ctx = document.getElementById("chartTahunan");
+  if(chartTahunan) chartTahunan.destroy();
+  chartTahunan = new Chart(ctx, {
+    type:"bar",
+    data:{ labels:namaBulan,
+      datasets:[
+        {label:"Hadir", data:perBulan.map(r=>r.Hadir), backgroundColor:"#2f6f4e"},
+        {label:"Alpa", data:perBulan.map(r=>r.Alpa), backgroundColor:"#b85c38"},
+        {label:"Kali Terlambat", data:perBulan.map(r=>r.kaliTerlambat), backgroundColor:"#c9973f"}
+      ]},
+    options:{ plugins:{legend:{position:"bottom", labels:{font:{family:"Work Sans"}}}}, scales:{y:{beginAtZero:true}} }
+  });
+}
+
+/* ---------------------------------------------------------------------
+   EKSPOR EXCEL & PDF
+--------------------------------------------------------------------- */
+function exportExcel(rows, filename, sheetName){
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, filename);
+}
+function exportPdf(head, body, filename, title){
+  const { jsPDF } = window.jspdf;
+  const docPdf = new jsPDF();
+  docPdf.setFontSize(13);
+  docPdf.text(title, 14, 16);
+  docPdf.autoTable({ head:[head], body, startY:22, styles:{fontSize:8} });
+  docPdf.save(filename);
+}
+
+document.getElementById("btnExportHarianCsv").addEventListener("click", ()=>{
+  const tanggal = document.getElementById("lapHarianTanggal").value;
+  exportExcel(lastHarianRows.map(r=>({Nama:r.nama,Jenis:r.jenis,Status:r.status,"Jam Masuk":r.jamMasuk,Keterlambatan:r.terlambat,Keterangan:r.keterangan})),
+    `laporan-harian-${tanggal}.xlsx`, "Harian");
+});
+document.getElementById("btnExportHarianPdf").addEventListener("click", ()=>{
+  const tanggal = document.getElementById("lapHarianTanggal").value;
+  exportPdf(["Nama","Jenis","Status","Jam Masuk","Keterlambatan","Keterangan"],
+    lastHarianRows.map(r=>[r.nama,r.jenis,r.status,r.jamMasuk,r.terlambat,r.keterangan]),
+    `laporan-harian-${tanggal}.pdf`, `Laporan Harian — ${tanggal}`);
+});
+document.getElementById("btnExportBulananCsv").addEventListener("click", ()=>{
+  const ym = document.getElementById("lapBulananBulan").value;
+  exportExcel(lastBulananRows.map(r=>({Nama:r.nama,Hadir:r.Hadir,Izin:r.Izin,Sakit:r.Sakit,Alpa:r.Alpa,Cuti:r.Cuti,"Kali Terlambat":r.kaliTerlambat,"Total Menit Terlambat":r.totalMenit})),
+    `laporan-bulanan-${ym}.xlsx`, "Bulanan");
+});
+document.getElementById("btnExportBulananPdf").addEventListener("click", ()=>{
+  const ym = document.getElementById("lapBulananBulan").value;
+  exportPdf(["Nama","Hadir","Izin","Sakit","Alpa","Cuti","Kali Terlambat","Total Menit"],
+    lastBulananRows.map(r=>[r.nama,r.Hadir,r.Izin,r.Sakit,r.Alpa,r.Cuti,r.kaliTerlambat,r.totalMenit]),
+    `laporan-bulanan-${ym}.pdf`, `Laporan Bulanan — ${ym}`);
+});
+document.getElementById("btnExportTahunanCsv").addEventListener("click", ()=>{
+  const th = document.getElementById("lapTahunanTahun").value;
+  exportExcel(lastTahunanRows.map(r=>({Bulan:r.bulan,Hadir:r.Hadir,Izin:r.Izin,Sakit:r.Sakit,Alpa:r.Alpa,Cuti:r.Cuti,"Kali Terlambat":r.kaliTerlambat})),
+    `laporan-tahunan-${th}.xlsx`, "Tahunan");
+});
+document.getElementById("btnExportTahunanPdf").addEventListener("click", ()=>{
+  const th = document.getElementById("lapTahunanTahun").value;
+  exportPdf(["Bulan","Hadir","Izin","Sakit","Alpa","Cuti","Kali Terlambat"],
+    lastTahunanRows.map(r=>[r.bulan,r.Hadir,r.Izin,r.Sakit,r.Alpa,r.Cuti,r.kaliTerlambat]),
+    `laporan-tahunan-${th}.pdf`, `Laporan Tahunan — ${th}`);
+});
+</script>
+
+</body>
+</html>
