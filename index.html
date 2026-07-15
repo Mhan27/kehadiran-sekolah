@@ -587,9 +587,18 @@ async function loadSettings(){
   }catch(e){ console.error(e); }
 }
 document.getElementById("btnSimpanJam").addEventListener("click", async ()=>{
+  if(!firebaseReady){
+    toast("Firebase belum terhubung, tidak bisa menyimpan pengaturan.");
+    return;
+  }
   JAM_STANDAR = document.getElementById("jamStandarInput").value || "07:00";
-  await setDoc(doc(db,"settings","umum"), { jamMasukStandar: JAM_STANDAR }, { merge:true });
-  toast("Jam masuk standar disimpan.");
+  try {
+    await setDoc(doc(db,"settings","umum"), { jamMasukStandar: JAM_STANDAR }, { merge:true });
+    toast("✅ Jam masuk standar disimpan.");
+  } catch (e) {
+    console.error("Gagal simpan jam:", e);
+    toast("❌ Gagal menyimpan pengaturan.");
+  }
 });
 
 /* ---------------------------------------------------------------------
@@ -645,6 +654,10 @@ function openPegawaiModal(id){
 function closePegawaiModal(){ document.getElementById("pegawaiModal").classList.add("hidden"); }
 
 document.getElementById("btnSavePegawai").addEventListener("click", async ()=>{
+  if(!firebaseReady){
+    toast("Firebase belum terhubung, tidak bisa menyimpan data.");
+    return;
+  }
   const id = document.getElementById("pegawaiId").value;
   const data = {
     nama: document.getElementById("pegawaiNama").value.trim(),
@@ -653,15 +666,21 @@ document.getElementById("btnSavePegawai").addEventListener("click", async ()=>{
     jenis: document.getElementById("pegawaiJenis").value,
   };
   if(!data.nama){ toast("Nama wajib diisi."); return; }
-  if(id){
-    await updateDoc(doc(db,"pegawai",id), data);
-  }else{
-    await addDoc(collection(db,"pegawai"), data);
+
+  try {
+    if(id){
+      await updateDoc(doc(db,"pegawai",id), data);
+    }else{
+      await addDoc(collection(db,"pegawai"), data);
+    }
+    await loadPegawai();
+    renderPegawaiTable();
+    closePegawaiModal();
+    toast("✅ Data pegawai disimpan.");
+  } catch (e) {
+    console.error("Gagal simpan pegawai:", e);
+    toast("❌ Gagal menyimpan: cek aturan Firestore atau koneksi.");
   }
-  await loadPegawai();
-  renderPegawaiTable();
-  closePegawaiModal();
-  toast("Data pegawai disimpan.");
 });
 
 async function deletePegawai(id){
@@ -730,18 +749,29 @@ function terlambatLabel(jamMasuk){
 }
 
 async function simpanAbsensiBaris(tr, pegawai, tanggal){
+  if(!firebaseReady){
+    toast("Firebase belum terhubung, tidak bisa menyimpan data.");
+    return;
+  }
   const status = tr.querySelector(".statusSelect").value;
   const jamMasuk = tr.querySelector(".jamInput").value;
   const keterangan = tr.querySelector(".ketInput").value.trim();
   const menitTerlambat = status==="Hadir" ? minutesLate(jamMasuk, JAM_STANDAR) : 0;
   const docId = `${pegawai.id}_${tanggal}`;
-  await setDoc(doc(db,"kehadiran",docId), {
-    idPegawai: pegawai.id,
-    namaPegawai: pegawai.nama,
-    jenis: pegawai.jenis,
-    tanggal, status, jamMasuk: status==="Hadir"?jamMasuk:"", menitTerlambat, keterangan
-  });
-  toast(`Kehadiran ${pegawai.nama} disimpan.`);
+
+  try {
+    await setDoc(doc(db,"kehadiran",docId), {
+      idPegawai: pegawai.id,
+      namaPegawai: pegawai.nama,
+      jenis: pegawai.jenis,
+      tanggal, status, jamMasuk: status==="Hadir"?jamMasuk:"", menitTerlambat, keterangan
+    });
+    toast(`✅ Kehadiran ${pegawai.nama} disimpan.`);
+    renderAbsensi(); // Segar ulang tabel setelah simpan
+  } catch (e) {
+    console.error("Gagal simpan absensi:", e);
+    toast("❌ Gagal menyimpan: cek aturan Firestore atau koneksi.");
+  }
 }
 
 /* ---------------------------------------------------------------------
