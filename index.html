@@ -870,18 +870,12 @@ async function renderLaporanBulanan(){
   });
   const rows = Object.values(perOrang);
   lastBulananRows = rows;
-  const tbody = document.getElementById("lapBulananTbody").innerHTML = lastRentang.map(r=>`
-  <tr>
-    <td>${r.nama}</td>
-    <td class="mono">${r.Hadir}</td>
-    <td class="mono">${r.Izin}</td>
-    <td class="mono">${r.Sakit}</td>
-    <td class="mono">${r.Alpa}</td>
-    <td class="mono">${r.Cuti}</td>
-    <td class="mono">${r.kaliTl}×</td>
-    <td class="mono">${r.totalTl} mnt</td>
+  const tbody = document.getElementById("lapBulananTbody");
+  tbody.innerHTML = rows.map(r=>`<tr>
+    <td>${r.nama}</td><td class="mono">${r.Hadir}</td><td class="mono">${r.Izin}</td><td class="mono">${r.Sakit}</td>
+    <td class="mono">${r.Alpa}</td><td class="mono">${r.Cuti}</td><td class="mono">${r.kaliTerlambat}×</td><td class="mono">${r.totalMenit} mnt</td>
   </tr>`).join("");
-  document.getElementById("lapBulananEmpty").classList.toggle("hidden", lastRentang.length > 0);
+  document.getElementById("lapBulananEmpty").classList.toggle("hidden", rows.length>0);
 }
 
 async function renderLaporanTahunan(){
@@ -896,7 +890,7 @@ async function renderLaporanTahunan(){
     perBulan[m][k.status] = (perBulan[m][k.status]||0)+1;
     if(k.menitTerlambat>0) perBulan[m].kaliTerlambat++;
   });
-  lastTahunan = perBulan;
+  lastTahunanRows = perBulan;
   const tbody = document.getElementById("lapTahunanTbody");
   tbody.innerHTML = perBulan.map(r=>`<tr>
     <td>${r.bulan}</td><td class="mono">${r.Hadir}</td><td class="mono">${r.Izin}</td><td class="mono">${r.Sakit}</td>
@@ -913,7 +907,7 @@ async function renderLaporanTahunan(){
         {label:"Alpa", data:perBulan.map(r=>r.Alpa), backgroundColor:"#b85c38"},
         {label:"Kali Terlambat", data:perBulan.map(r=>r.kaliTerlambat), backgroundColor:"#c9973f"}
       ]},
-    options:{ plugins:{legend:{position:"bottom"}}, scales:{y:{beginAtZero:true}} }
+    options:{ plugins:{legend:{position:"bottom", labels:{font:{family:"Work Sans"}}}}, scales:{y:{beginAtZero:true}} }
   });
 }
 
@@ -937,37 +931,35 @@ function exportPdf(head, body, filename, title){
 
 document.getElementById("btnExportHarianCsv").addEventListener("click", ()=>{
   const tanggal = document.getElementById("lapHarianTanggal").value;
-  exportExcel(lastHarian.map(r=>({Nama:r.nama,Jenis:r.jenis,Status:r.status,"Jam Masuk":r.jamMasuk,Keterlambatan:r.terlambat,Keterangan:r.keterangan})),
+  exportExcel(lastHarianRows.map(r=>({Nama:r.nama,Jenis:r.jenis,Status:r.status,"Jam Masuk":r.jamMasuk,Keterlambatan:r.terlambat,Keterangan:r.keterangan})),
     `laporan-harian-${tanggal}.xlsx`, "Harian");
 });
 document.getElementById("btnExportHarianPdf").addEventListener("click", ()=>{
   const tanggal = document.getElementById("lapHarianTanggal").value;
   exportPdf(["Nama","Jenis","Status","Jam Masuk","Keterlambatan","Keterangan"],
-    lastHarian.map(r=>[r.nama,r.jenis,r.status,r.jamMasuk,r.terlambat,r.keterangan]),
+    lastHarianRows.map(r=>[r.nama,r.jenis,r.status,r.jamMasuk,r.terlambat,r.keterangan]),
     `laporan-harian-${tanggal}.pdf`, `Laporan Harian — ${tanggal}`);
 });
 document.getElementById("btnExportBulananCsv").addEventListener("click", ()=>{
-  const tglMulai = document.getElementById("lapTglMulai").value;
-  const tglSelesai = document.getElementById("lapTglSelesai").value;
-  exportExcel(lastRentang.map(r=>({Nama:r.nama,Hadir:r.Hadir,Izin:r.Izin,Sakit:r.Sakit,Alpa:r.Alpa,Cuti:r.Cuti,"Kali Terlambat":r.kaliTl,"Total Menit Terlambat":r.totalTl})),
-    `laporan-rentang-${tglMulai}_sd_${tglSelesai}.xlsx`, "Rentang");
+  const ym = document.getElementById("lapBulananBulan").value;
+  exportExcel(lastBulananRows.map(r=>({Nama:r.nama,Hadir:r.Hadir,Izin:r.Izin,Sakit:r.Sakit,Alpa:r.Alpa,Cuti:r.Cuti,"Kali Terlambat":r.kaliTerlambat,"Total Menit Terlambat":r.totalMenit})),
+    `laporan-bulanan-${ym}.xlsx`, "Bulanan");
 });
 document.getElementById("btnExportBulananPdf").addEventListener("click", ()=>{
-  const tglMulai = document.getElementById("lapTglMulai").value;
-  const tglSelesai = document.getElementById("lapTglSelesai").value;
+  const ym = document.getElementById("lapBulananBulan").value;
   exportPdf(["Nama","Hadir","Izin","Sakit","Alpa","Cuti","Kali Terlambat","Total Menit"],
-    lastRentang.map(r=>[r.nama,r.Hadir,r.Izin,r.Sakit,r.Alpa,r.Cuti,r.kaliTl,r.totalTl]),
-    `laporan-rentang-${tglMulai}_sd_${tglSelesai}.pdf`, `Laporan Rentang ${tglMulai} - ${tglSelesai}`);
+    lastBulananRows.map(r=>[r.nama,r.Hadir,r.Izin,r.Sakit,r.Alpa,r.Cuti,r.kaliTerlambat,r.totalMenit]),
+    `laporan-bulanan-${ym}.pdf`, `Laporan Bulanan — ${ym}`);
 });
 document.getElementById("btnExportTahunanCsv").addEventListener("click", ()=>{
   const th = document.getElementById("lapTahunanTahun").value;
-  exportExcel(lastTahunan.map(r=>({Bulan:r.bulan,Hadir:r.Hadir,Izin:r.Izin,Sakit:r.Sakit,Alpa:r.Alpa,Cuti:r.Cuti,"Kali Terlambat":r.kaliTerlambat})),
+  exportExcel(lastTahunanRows.map(r=>({Bulan:r.bulan,Hadir:r.Hadir,Izin:r.Izin,Sakit:r.Sakit,Alpa:r.Alpa,Cuti:r.Cuti,"Kali Terlambat":r.kaliTerlambat})),
     `laporan-tahunan-${th}.xlsx`, "Tahunan");
 });
 document.getElementById("btnExportTahunanPdf").addEventListener("click", ()=>{
   const th = document.getElementById("lapTahunanTahun").value;
   exportPdf(["Bulan","Hadir","Izin","Sakit","Alpa","Cuti","Kali Terlambat"],
-    lastTahunan.map(r=>[r.bulan,r.Hadir,r.Izin,r.Sakit,r.Alpa,r.Cuti,r.kaliTerlambat]),
+    lastTahunanRows.map(r=>[r.bulan,r.Hadir,r.Izin,r.Sakit,r.Alpa,r.Cuti,r.kaliTerlambat]),
     `laporan-tahunan-${th}.pdf`, `Laporan Tahunan — ${th}`);
 });
 </script>
