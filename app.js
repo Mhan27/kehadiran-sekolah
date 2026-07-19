@@ -1,7 +1,39 @@
 /* =======================================================================
    SISTEM KEHADIRAN GURU & KARYAWAN — SMP MUHAMMADIYAH 7 SURABAYA
-   Vanilla HTML / CSS / JS version. Data disimpan di localStorage browser.
+   Vanilla HTML / CSS / JS version. Data disimpan di Firebase (Firestore).
 ======================================================================= */
+
+/* =========================================================================
+   GANTI BAGIAN INI dengan firebaseConfig dari Firebase Console proyekmu
+   ========================================================================= */
+const firebaseConfig = {
+  apiKey: "GANTI_DENGAN_API_KEY",
+  authDomain: "GANTI_DENGAN_PROJECT.firebaseapp.com",
+  projectId: "GANTI_DENGAN_PROJECT_ID",
+  storageBucket: "GANTI_DENGAN_PROJECT.appspot.com",
+  messagingSenderId: "GANTI_DENGAN_SENDER_ID",
+  appId: "GANTI_DENGAN_APP_ID"
+};
+/* ========================================================================= */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth, signInAnonymously, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore, collection, doc, setDoc, deleteDoc, getDocs, query, where
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+let fbApp, auth, db;
+let firebaseReady = false;
+try{
+  if(!firebaseConfig.apiKey.startsWith("GANTI")){
+    fbApp = initializeApp(firebaseConfig);
+    auth = getAuth(fbApp);
+    db = getFirestore(fbApp);
+    firebaseReady = true;
+  }
+}catch(e){ console.error("Gagal inisialisasi Firebase:", e); }
 
 /* ---------------------------- ICONS (inline SVG) ---------------------------- */
 const icon = (path, size = 16) =>
@@ -75,23 +107,32 @@ function badgeHtml(status) {
   return `<span class="badge ${m.cls}">${m.icon}${status}</span>`;
 }
 
-/* ---------------------------- STORAGE (localStorage) ---------------------------- */
-const KEYS = { users: 'smpm7_users', staff: 'smpm7_staff', schedules: 'smpm7_schedules', attendance: 'smpm7_attendance' };
-function loadJSON(key, fallback) {
-  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
-  catch (e) { return fallback; }
-}
-function saveJSON(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); return true; }
-  catch (e) { console.error('Gagal menyimpan', key, e); return false; }
+/* ---------------------------- STORAGE (Firestore) ---------------------------- */
+async function loadAllData(){
+  const [usersSnap, staffSnap, schedSnap, attSnap] = await Promise.all([
+    getDocs(collection(db, 'users')),
+    getDocs(collection(db, 'staff')),
+    getDocs(collection(db, 'schedules')),
+    getDocs(collection(db, 'attendance')),
+  ]);
+  state.users = usersSnap.docs.map((d) => d.data());
+  state.staff = staffSnap.docs.map((d) => d.data());
+  state.schedules = schedSnap.docs.map((d) => d.data());
+  state.attendance = attSnap.docs.map((d) => d.data());
+
+  if (state.users.length === 0) {
+    const superadmin = { id: uid('usr'), fullName: 'Super Admin', username: 'superadmin', password: 'super123', role: 'superadmin' };
+    await setDoc(doc(db, 'users', superadmin.username), superadmin);
+    state.users = [superadmin];
+  }
 }
 
 /* ---------------------------- APP STATE ---------------------------- */
 const state = {
-  users: loadJSON(KEYS.users, []),
-  staff: loadJSON(KEYS.staff, []),
-  schedules: loadJSON(KEYS.schedules, []),
-  attendance: loadJSON(KEYS.attendance, []),
+  users: [],
+  staff: [],
+  schedules: [],
+  attendance: [],
   currentUser: null,
   page: 'dashboard',
   mobileOpen: false,
@@ -102,11 +143,6 @@ const state = {
   staffSelected: [],
   staffQuery: '',
 };
-
-if (state.users.length === 0) {
-  state.users = [{ id: uid('usr'), fullName: 'Super Admin', username: 'superadmin', password: 'super123', role: 'superadmin' }];
-  saveJSON(KEYS.users, state.users);
-}
 
 let chartInstance = null;
 let toastTimer = null;
@@ -399,16 +435,22 @@ function renderTambahAdmin() {
   `;
 }
 function attachTambahAdminEvents() {
-  document.getElementById('ta-submit').addEventListener('click', () => {
+  document.getElementById('ta-submit').addEventListener('click', async () => {
     const fullName = document.getElementById('ta-fullname').value.trim();
     const username = document.getElementById('ta-username').value.trim();
     const password = document.getElementById('ta-password').value;
     if (!fullName || !username || !password) { notify('Semua kolom wajib diisi.', 'error'); return; }
     if (state.users.some((u) => u.username === username)) { notify('Username sudah digunakan.', 'error'); return; }
-    state.users.push({ id: uid('usr'), fullName, username, password, role: 'admin' });
-    saveJSON(KEYS.users, state.users);
-    notify('Admin baru berhasil ditambahkan.');
-    render();
+    const newUser = { id: uid('usr'), fullName, username, password, role: 'admin' };
+    try {
+      await setDoc(doc(db, 'users', username), newUser);
+      state.users.push(newUser);
+      notify('Admin baru berhasil ditambahkan.');
+      render();
+    } catch (e) {
+      console.error('Gagal menambah admin:', e);
+      notify('Gagal menyimpan ke server: ' + e.message, 'error');
+    }
   });
   document.querySelectorAll('[data-del-admin]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -416,12 +458,19 @@ function attachTambahAdminEvents() {
       state.confirm = {
         title: 'Hapus akun admin?',
         body: `Akun "${escapeHtml(admin.fullName)}" (@${escapeHtml(admin.username)}) akan dihapus permanen.`,
-        onConfirm: () => {
-          state.users = state.users.filter((u) => u.id !== admin.id);
-          saveJSON(KEYS.users, state.users);
-          state.confirm = null;
-          notify('Admin dihapus.');
-          render();
+        onConfirm: async () => {
+          try {
+            await deleteDoc(doc(db, 'users', admin.username));
+            state.users = state.users.filter((u) => u.id !== admin.id);
+            state.confirm = null;
+            notify('Admin dihapus.');
+            render();
+          } catch (e) {
+            console.error('Gagal menghapus admin:', e);
+            state.confirm = null;
+            notify('Gagal menghapus di server: ' + e.message, 'error');
+            render();
+          }
         },
       };
       render();
@@ -468,14 +517,20 @@ function renderDataStaff() {
   `;
 }
 function attachDataStaffEvents() {
-  document.getElementById('ds-submit').addEventListener('click', () => {
+  document.getElementById('ds-submit').addEventListener('click', async () => {
     const name = document.getElementById('ds-name').value.trim();
     const position = document.getElementById('ds-position').value.trim() || 'Guru';
     if (!name) { notify('Nama wajib diisi.', 'error'); return; }
-    state.staff.push({ id: uid('stf'), name, position });
-    saveJSON(KEYS.staff, state.staff);
-    notify('Guru/Karyawan berhasil ditambahkan. Jam kehadiran default otomatis tersinkron.');
-    render();
+    const newStaff = { id: uid('stf'), name, position };
+    try {
+      await setDoc(doc(db, 'staff', newStaff.id), newStaff);
+      state.staff.push(newStaff);
+      notify('Guru/Karyawan berhasil ditambahkan. Jam kehadiran default otomatis tersinkron.');
+      render();
+    } catch (e) {
+      console.error('Gagal menambah staff:', e);
+      notify('Gagal menyimpan ke server: ' + e.message, 'error');
+    }
   });
   document.getElementById('ds-search').addEventListener('input', (e) => {
     state.staffQuery = e.target.value;
@@ -500,18 +555,29 @@ function attachDataStaffEvents() {
     state.confirm = {
       title: 'Hapus data terpilih?',
       body: `${state.staffSelected.length} data guru/karyawan beserta riwayat kehadirannya akan dihapus permanen.`,
-      onConfirm: () => {
+      onConfirm: async () => {
         const ids = state.staffSelected;
-        state.staff = state.staff.filter((s) => !ids.includes(s.id));
-        state.schedules = state.schedules.filter((s) => !ids.includes(s.staffId));
-        state.attendance = state.attendance.filter((a) => !ids.includes(a.staffId));
-        saveJSON(KEYS.staff, state.staff);
-        saveJSON(KEYS.schedules, state.schedules);
-        saveJSON(KEYS.attendance, state.attendance);
-        notify(`${ids.length} data dihapus.`);
-        state.staffSelected = [];
-        state.confirm = null;
-        render();
+        try {
+          for (const id of ids) {
+            await deleteDoc(doc(db, 'staff', id));
+            await deleteDoc(doc(db, 'schedules', id)).catch(() => {});
+            const q = query(collection(db, 'attendance'), where('staffId', '==', id));
+            const snap = await getDocs(q);
+            await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+          }
+          state.staff = state.staff.filter((s) => !ids.includes(s.id));
+          state.schedules = state.schedules.filter((s) => !ids.includes(s.staffId));
+          state.attendance = state.attendance.filter((a) => !ids.includes(a.staffId));
+          notify(`${ids.length} data dihapus.`);
+          state.staffSelected = [];
+          state.confirm = null;
+          render();
+        } catch (e) {
+          console.error('Gagal menghapus staff:', e);
+          state.confirm = null;
+          notify('Gagal menghapus di server: ' + e.message, 'error');
+          render();
+        }
       },
     };
     render();
@@ -544,13 +610,19 @@ function renderJamKehadiran() {
 }
 function attachJamKehadiranEvents() {
   document.querySelectorAll('[data-jk-save]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const id = btn.dataset.jkSave;
       const jamMasuk = document.querySelector(`[data-jk-masuk="${id}"]`).value || '07:00';
       const jamPulang = document.querySelector(`[data-jk-pulang="${id}"]`).value || '14:00';
-      state.schedules = [...state.schedules.filter((s) => s.staffId !== id), { staffId: id, jamMasuk, jamPulang }];
-      saveJSON(KEYS.schedules, state.schedules);
-      notify('Jam kehadiran disimpan.');
+      const sched = { staffId: id, jamMasuk, jamPulang };
+      try {
+        await setDoc(doc(db, 'schedules', id), sched);
+        state.schedules = [...state.schedules.filter((s) => s.staffId !== id), sched];
+        notify('Jam kehadiran disimpan.');
+      } catch (e) {
+        console.error('Gagal menyimpan jam kehadiran:', e);
+        notify('Gagal menyimpan ke server: ' + e.message, 'error');
+      }
     });
   });
 }
@@ -601,16 +673,22 @@ function attachInputKehadiranEvents() {
       hint.style.display = 'none';
     }
   });
-  document.getElementById('ik-submit').addEventListener('click', () => {
+  document.getElementById('ik-submit').addEventListener('click', async () => {
     const staffId = staffSelect.value;
     const jam = document.getElementById('ik-jam').value;
     if (!staffId || !jam) { notify('Pilih nama dan isi jam kehadiran.', 'error'); return; }
     const today = todayKey();
-    state.attendance = state.attendance.filter((a) => !(a.staffId === staffId && a.date === today));
-    state.attendance.push({ id: uid('att'), staffId, date: today, jamHadir: jam, inputBy: state.currentUser.username });
-    saveJSON(KEYS.attendance, state.attendance);
-    notify('Kehadiran berhasil disimpan.');
-    render();
+    const record = { id: uid('att'), staffId, date: today, jamHadir: jam, inputBy: state.currentUser.username };
+    try {
+      await setDoc(doc(db, 'attendance', `${staffId}_${today}`), record);
+      state.attendance = state.attendance.filter((a) => !(a.staffId === staffId && a.date === today));
+      state.attendance.push(record);
+      notify('Kehadiran berhasil disimpan.');
+      render();
+    } catch (e) {
+      console.error('Gagal menyimpan kehadiran:', e);
+      notify('Gagal menyimpan ke server: ' + e.message, 'error');
+    }
   });
 }
 
@@ -749,5 +827,38 @@ window.addEventListener('resize', () => {
   }, 150);
 });
 
+/* ---------------------------- BOOT (Firebase) ---------------------------- */
+function renderBootScreen(message, isError = false) {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="login-page">
+      <div class="sun-decor top">${sunMotif(360, 0.10, '#C9A227')}</div>
+      <div class="sun-decor bottom">${sunMotif(300, 0.07, '#C9A227')}</div>
+      <div class="card login-card" style="text-align:center">
+        <div class="login-logo"><img src="logo.png" alt="Logo SMP Muhammadiyah 7 Surabaya" class="brand-logo brand-logo-lg" /></div>
+        <p class="login-eyebrow">SMP Muhammadiyah 7 Surabaya</p>
+        <h1 class="login-title">Sistem Kehadiran</h1>
+        <p class="${isError ? 'login-error' : 'page-desc'}" style="display:block;margin-top:12px">${escapeHtml(message)}</p>
+      </div>
+    </div>`;
+}
+
+async function boot() {
+  if (!firebaseReady) {
+    renderBootScreen('Firebase belum dikonfigurasi. Lengkapi firebaseConfig di app.js (cari komentar "GANTI BAGIAN INI"), lalu aktifkan Authentication (Anonymous) dan Firestore di Firebase Console.', true);
+    return;
+  }
+  renderBootScreen('Menghubungkan ke server...');
+  try {
+    await signInAnonymously(auth);
+    await loadAllData();
+  } catch (e) {
+    console.error('Gagal memuat data dari Firebase:', e);
+    renderBootScreen('Gagal terhubung ke server. Periksa koneksi internet, pastikan provider Anonymous aktif di Authentication, dan Firestore Rules sudah dipublish. Detail error ada di console browser (F12).', true);
+    return;
+  }
+  render();
+}
+
 /* ---------------------------- INIT ---------------------------- */
-document.addEventListener('DOMContentLoaded', render);
+document.addEventListener('DOMContentLoaded', boot);
