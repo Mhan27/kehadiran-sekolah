@@ -27,7 +27,7 @@ import {
 let fbApp, auth, db;
 let firebaseReady = false;
 try{
-  if(!firebaseConfig.apiKey.startsWith("AIzaSyCBtd2bt33AsnUtA9To3OUnIsBlAJkBb1c")){
+  if(!firebaseConfig.apiKey.startsWith("GANTI")){
     fbApp = initializeApp(firebaseConfig);
     auth = getAuth(fbApp);
     db = getFirestore(fbApp);
