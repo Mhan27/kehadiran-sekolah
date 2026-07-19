@@ -7,7 +7,7 @@
    GANTI BAGIAN INI dengan firebaseConfig dari Firebase Console proyekmu
    ========================================================================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyCBtd2bt33AsnUtA9To3OUnIsBlAJkBb1c",
+  aapiKey: "AIzaSyCBtd2bt33AsnUtA9To3OUnIsBlAJkBb1c",
   authDomain: "kehadiran-sekolah-64c04.firebaseapp.com",
   projectId: "kehadiran-sekolah-64c04",
   storageBucket: "kehadiran-sekolah-64c04.firebasestorage.app",
