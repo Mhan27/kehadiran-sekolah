@@ -7,7 +7,7 @@
    GANTI BAGIAN INI dengan firebaseConfig dari Firebase Console proyekmu
    ========================================================================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyCBtd2bt33AsnUtA9To3OUnIsBlAJkBb1c",
+  aapiKey: "AIzaSyCBtd2bt33AsnUtA9To3OUnIsBlAJkBb1c",
   authDomain: "kehadiran-sekolah-64c04.firebaseapp.com",
   projectId: "kehadiran-sekolah-64c04",
   storageBucket: "kehadiran-sekolah-64c04.firebasestorage.app",
@@ -56,6 +56,7 @@ const ICONS = {
   x: icon('<path d="M6 6l12 12M18 6L6 18"/>', 22),
   search: icon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>'),
   save: icon('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4M8 14h8v6H8z"/>', 14),
+  download: icon('<path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>', 16),
 };
 
 /* ---------------------------- SUN MOTIF ---------------------------- */
@@ -692,7 +693,191 @@ function attachInputKehadiranEvents() {
   });
 }
 
-/* ---------------------------- LAPORAN ---------------------------- */
+/* ---------------------------- EKSPOR PDF ---------------------------- */
+let logoDataUrlPromise = null;
+function getLogoDataUrl() {
+  if (!logoDataUrlPromise) {
+    logoDataUrlPromise = new Promise((resolve) => {
+      try {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          } catch (e) { resolve(null); }
+        };
+        img.onerror = () => resolve(null);
+        img.src = 'logo.png';
+      } catch (e) { resolve(null); }
+    });
+  }
+  return logoDataUrlPromise;
+}
+
+function getPdfCtor() {
+  if (window.jspdf && window.jspdf.jsPDF) return window.jspdf.jsPDF;
+  return null;
+}
+
+function drawPdfHeader(doc, logoDataUrl, title, subtitle) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const textX = logoDataUrl ? 34 : 14;
+  if (logoDataUrl) {
+    try { doc.addImage(logoDataUrl, 'PNG', 14, 9, 18, 18); } catch (e) { /* skip logo if it fails */ }
+  }
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(15, 81, 50);
+  doc.text('SMP MUHAMMADIYAH 7 SURABAYA', textX, 16);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(91, 107, 96);
+  doc.text('Sistem Kehadiran Guru & Karyawan', textX, 22);
+  doc.setDrawColor(201, 162, 39);
+  doc.setLineWidth(0.9);
+  doc.line(14, 30, pageWidth - 14, 30);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12.5);
+  doc.setTextColor(27, 42, 34);
+  doc.text(title, 14, 39);
+  let y = 39;
+  if (subtitle) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(91, 107, 96);
+    doc.text(subtitle, 14, 45);
+    y = 45;
+  }
+  return y + 6;
+}
+
+function drawPdfFooter(doc) {
+  const pageCount = doc.internal.getNumberOfPages();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const printedInfo = `Dicetak ${formatIndo(todayKey())} oleh ${state.currentUser.fullName} (${state.currentUser.role === 'superadmin' ? 'Super Admin' : 'Admin'})`;
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(printedInfo, 14, pageHeight - 8);
+    doc.text(`Hal. ${i}/${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' });
+  }
+}
+
+async function exportLaporanHarianPDF() {
+  const JsPDFCtor = getPdfCtor();
+  if (!JsPDFCtor) { notify('Modul PDF belum siap, coba lagi sesaat.', 'error'); return; }
+  const date = state.reportDate;
+  const sunday = isSunday(date);
+  const isFuture = date > todayKey();
+  const logoDataUrl = await getLogoDataUrl();
+
+  const doc = new JsPDFCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const startY = drawPdfHeader(doc, logoDataUrl, 'Laporan Kehadiran Harian', formatIndo(date));
+
+  if (sunday) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(91, 107, 96);
+    doc.text('Hari ini libur (Minggu). Tidak ada data kehadiran.', 14, startY + 2);
+  } else if (state.staff.length === 0) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(91, 107, 96);
+    doc.text('Belum ada data guru/karyawan.', 14, startY + 2);
+  } else {
+    const body = state.staff.map((s) => {
+      const rec = state.attendance.find((a) => a.staffId === s.id && a.date === date);
+      const status = isFuture ? '—' : computeStatus(rec?.jamHadir, getSchedule(state.schedules, s.id).jamMasuk);
+      return [s.name, s.position, rec?.jamHadir || '—', status];
+    });
+    doc.autoTable({
+      startY,
+      head: [['Nama', 'Jabatan', 'Jam Hadir', 'Status']],
+      body,
+      theme: 'grid',
+      margin: { left: 14, right: 14 },
+      styles: { font: 'helvetica', fontSize: 9, textColor: [27, 42, 34], lineColor: [228, 225, 214], lineWidth: 0.2 },
+      headStyles: { fillColor: [15, 81, 50], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [234, 243, 236] },
+      didParseCell: (dataCell) => {
+        if (dataCell.section === 'body' && dataCell.column.index === 3) {
+          const v = dataCell.cell.raw;
+          if (v === 'Hadir') dataCell.cell.styles.textColor = [15, 81, 50];
+          else if (v === 'Terlambat') dataCell.cell.styles.textColor = [154, 107, 0];
+          else if (v === 'Alpa') dataCell.cell.styles.textColor = [179, 38, 30];
+          dataCell.cell.styles.fontStyle = 'bold';
+        }
+      },
+    });
+  }
+
+  drawPdfFooter(doc);
+  doc.save(`Laporan-Harian-${date}.pdf`);
+  notify('Laporan harian berhasil diunduh sebagai PDF.');
+}
+
+async function exportLaporanBulananPDF() {
+  const JsPDFCtor = getPdfCtor();
+  if (!JsPDFCtor) { notify('Modul PDF belum siap, coba lagi sesaat.', 'error'); return; }
+  const date = state.reportDate;
+  const d = new Date(date + 'T00:00:00');
+  const year = d.getFullYear(), month = d.getMonth();
+  const totalDays = daysInMonth(year, month);
+  const todayD = new Date();
+  const isCurrentMonth = todayD.getFullYear() === year && todayD.getMonth() === month;
+  const lastDay = isCurrentMonth ? todayD.getDate() : (new Date(year, month, 1) > todayD ? 0 : totalDays);
+  const logoDataUrl = await getLogoDataUrl();
+
+  const doc = new JsPDFCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const startY = drawPdfHeader(doc, logoDataUrl, 'Laporan Kehadiran Bulanan', `${MONTH_NAMES_ID[month]} ${year}`);
+
+  if (state.staff.length === 0) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(91, 107, 96);
+    doc.text('Belum ada data guru/karyawan.', 14, startY + 2);
+  } else if (lastDay === 0) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(91, 107, 96);
+    doc.text('Bulan ini belum berjalan.', 14, startY + 2);
+  } else {
+    let totalHadir = 0, totalTerlambat = 0, totalAlpa = 0;
+    const body = state.staff.map((s) => {
+      let hadir = 0, terlambat = 0, alpa = 0, hariSekolah = 0;
+      for (let day = 1; day <= lastDay; day++) {
+        const key = `${year}-${pad2(month + 1)}-${pad2(day)}`;
+        if (isSunday(key)) continue;
+        hariSekolah++;
+        const rec = state.attendance.find((a) => a.staffId === s.id && a.date === key);
+        const status = computeStatus(rec?.jamHadir, getSchedule(state.schedules, s.id).jamMasuk);
+        if (status === 'Hadir') hadir++; else if (status === 'Terlambat') terlambat++; else alpa++;
+      }
+      totalHadir += hadir; totalTerlambat += terlambat; totalAlpa += alpa;
+      return [s.name, String(hariSekolah), String(hadir), String(terlambat), String(alpa)];
+    });
+    body.push(['TOTAL', '', String(totalHadir), String(totalTerlambat), String(totalAlpa)]);
+
+    doc.autoTable({
+      startY,
+      head: [['Nama', 'Hari Sekolah', 'Hadir', 'Terlambat', 'Alpa']],
+      body,
+      theme: 'grid',
+      margin: { left: 14, right: 14 },
+      styles: { font: 'helvetica', fontSize: 9, textColor: [27, 42, 34], lineColor: [228, 225, 214], lineWidth: 0.2 },
+      headStyles: { fillColor: [15, 81, 50], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [234, 243, 236] },
+      didParseCell: (dataCell) => {
+        const isTotalRow = dataCell.row.index === body.length - 1 && dataCell.section === 'body';
+        if (isTotalRow) { dataCell.cell.styles.fontStyle = 'bold'; dataCell.cell.styles.fillColor = [239, 226, 184]; }
+      },
+    });
+  }
+
+  drawPdfFooter(doc);
+  doc.save(`Laporan-Bulanan-${MONTH_NAMES_ID[month]}-${year}.pdf`);
+  notify('Laporan bulanan berhasil diunduh sebagai PDF.');
+}
+
+
 function renderLaporan() {
   return `
     ${pageHeader('Laporan', 'Laporan Kehadiran', 'Pilih tanggal untuk melihat laporan harian atau bulanan.')}
@@ -701,9 +886,12 @@ function renderLaporan() {
       <button class="tab-btn ${state.reportTab === 'bulanan' ? 'active' : ''}" data-tab="bulanan">Bulanan</button>
     </div>
     <div class="card card-p-sm" style="margin-bottom:20px">
-      <div class="field" style="margin-bottom:0">
-        <span class="field-label">${state.reportTab === 'harian' ? 'Pilih Tanggal' : 'Pilih Tanggal (bulan & tahun akan digunakan)'}</span>
-        <input id="rep-date" type="date" class="input" style="max-width:220px" value="${state.reportDate}" />
+      <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; justify-content:space-between">
+        <div class="field" style="margin-bottom:0">
+          <span class="field-label">${state.reportTab === 'harian' ? 'Pilih Tanggal' : 'Pilih Tanggal (bulan & tahun akan digunakan)'}</span>
+          <input id="rep-date" type="date" class="input" style="max-width:220px" value="${state.reportDate}" />
+        </div>
+        <button id="rep-export-pdf" class="btn btn-gold">${ICONS.download}Unduh PDF</button>
       </div>
     </div>
     <div id="report-body">${state.reportTab === 'harian' ? renderLaporanHarian() : renderLaporanBulanan()}</div>
@@ -787,6 +975,22 @@ function attachLaporanEvents() {
     state.reportDate = e.target.value;
     document.getElementById('report-body').innerHTML =
       state.reportTab === 'harian' ? renderLaporanHarian() : renderLaporanBulanan();
+  });
+  const exportBtn = document.getElementById('rep-export-pdf');
+  if (exportBtn) exportBtn.addEventListener('click', async () => {
+    exportBtn.disabled = true;
+    const originalHtml = exportBtn.innerHTML;
+    exportBtn.innerHTML = 'Menyiapkan PDF...';
+    try {
+      if (state.reportTab === 'harian') await exportLaporanHarianPDF();
+      else await exportLaporanBulananPDF();
+    } catch (e) {
+      console.error('Gagal membuat PDF:', e);
+      notify('Gagal membuat PDF: ' + e.message, 'error');
+    } finally {
+      exportBtn.disabled = false;
+      exportBtn.innerHTML = originalHtml;
+    }
   });
 }
 
