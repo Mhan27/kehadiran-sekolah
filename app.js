@@ -6,13 +6,15 @@
 /* =========================================================================
    GANTI BAGIAN INI dengan firebaseConfig dari Firebase Console proyekmu
    ========================================================================= */
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  aapiKey: "AIzaSyCBtd2bt33AsnUtA9To3OUnIsBlAJkBb1c",
+  apiKey: "AIzaSyCBtd2bt33AsnUtA9To3OUnIsBlAJkBb1c",
   authDomain: "kehadiran-sekolah-64c04.firebaseapp.com",
   projectId: "kehadiran-sekolah-64c04",
   storageBucket: "kehadiran-sekolah-64c04.firebasestorage.app",
   messagingSenderId: "89615570330",
   appId: "1:89615570330:web:22f82597b07754c4301623",
+  measurementId: "G-F9CBQMYEW1"
 };
 /* ========================================================================= */
 
