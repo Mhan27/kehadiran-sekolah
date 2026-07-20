@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: "1:89615570330:web:22f82597b07754c4301623"
 };
 /* ========================================================================= */
-
+ 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInAnonymously, onAuthStateChanged
@@ -23,7 +23,7 @@ import {
 import {
   getFirestore, collection, doc, setDoc, deleteDoc, getDocs, query, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
+ 
 let fbApp, auth, db;
 let firebaseReady = false;
 let firebaseInitError = null;
@@ -41,11 +41,11 @@ try{
   firebaseInitError = e;
   console.error("Gagal inisialisasi Firebase:", e);
 }
-
+ 
 /* ---------------------------- ICONS (inline SVG) ---------------------------- */
 const icon = (path, size = 16) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
-
+ 
 const ICONS = {
   dashboard: icon('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
   userPlus: icon('<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7"/><path d="M19 8v6M16 11h6"/>'),
@@ -65,7 +65,7 @@ const ICONS = {
   save: icon('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4M8 14h8v6H8z"/>', 14),
   download: icon('<path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>', 16),
 };
-
+ 
 /* ---------------------------- SUN MOTIF ---------------------------- */
 function sunMotif(size = 64, opacity = 1, color = 'var(--green-700)') {
   const rays = 16;
@@ -78,7 +78,7 @@ function sunMotif(size = 64, opacity = 1, color = 'var(--green-700)') {
     <g transform="translate(100,100)">${bars}<circle r="34" fill="none" stroke="${color}" stroke-width="3"/></g>
   </svg>`;
 }
-
+ 
 /* ---------------------------- HELPERS ---------------------------- */
 const pad2 = (n) => String(n).padStart(2, '0');
 const dateKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -91,10 +91,10 @@ const formatIndo = (dstr) => { const d = new Date(dstr + 'T00:00:00'); return `$
 const daysInMonth = (year, monthIdx) => new Date(year, monthIdx + 1, 0).getDate();
 const uid = (p = 'id') => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const escapeHtml = (str) => String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-
+ 
 const DEFAULT_SCHEDULE = { jamMasuk: '07:00', jamPulang: '14:00' };
 const TOLERANCE_MIN = 5;
-
+ 
 function getSchedule(schedules, staffId) {
   return schedules.find((s) => s.staffId === staffId) || DEFAULT_SCHEDULE;
 }
@@ -114,7 +114,7 @@ function badgeHtml(status) {
   const m = map[status] || map.Alpa;
   return `<span class="badge ${m.cls}">${m.icon}${status}</span>`;
 }
-
+ 
 /* ---------------------------- STORAGE (Firestore) ---------------------------- */
 async function loadAllData(){
   const [usersSnap, staffSnap, schedSnap, attSnap] = await Promise.all([
@@ -127,14 +127,14 @@ async function loadAllData(){
   state.staff = staffSnap.docs.map((d) => d.data());
   state.schedules = schedSnap.docs.map((d) => d.data());
   state.attendance = attSnap.docs.map((d) => d.data());
-
+ 
   if (state.users.length === 0) {
     const superadmin = { id: uid('usr'), fullName: 'Super Admin', username: 'superadmin', password: 'super123', role: 'superadmin' };
     await setDoc(doc(db, 'users', superadmin.username), superadmin);
     state.users = [superadmin];
   }
 }
-
+ 
 /* ---------------------------- APP STATE ---------------------------- */
 const state = {
   users: [],
@@ -151,10 +151,10 @@ const state = {
   staffSelected: [],
   staffQuery: '',
 };
-
+ 
 let chartInstance = null;
 let toastTimer = null;
-
+ 
 function notify(message, type = 'success') {
   state.toast = { message, type };
   render();
@@ -169,7 +169,7 @@ function toastHtml() {
   if (!state.toast) return '';
   return `<div class="toast ${state.toast.type}">${escapeHtml(state.toast.message)}</div>`;
 }
-
+ 
 /* ---------------------------- RENDER ROOT ---------------------------- */
 function render() {
   const app = document.getElementById('app');
@@ -181,7 +181,7 @@ function render() {
   app.innerHTML = renderShell();
   attachShellEvents();
 }
-
+ 
 /* ---------------------------- LOGIN PAGE ---------------------------- */
 function renderLogin() {
   return `
@@ -228,7 +228,7 @@ function attachLoginEvents() {
     document.getElementById(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
   });
 }
-
+ 
 /* ---------------------------- SHELL (sidebar + content) ---------------------------- */
 function navForRole(isSuper) {
   return isSuper
@@ -245,16 +245,16 @@ function navForRole(isSuper) {
         { id: 'laporan', label: 'Laporan', icon: ICONS.clipboard },
       ];
 }
-
+ 
 function renderShell() {
   const isSuper = state.currentUser.role === 'superadmin';
   const nav = navForRole(isSuper);
-
+ 
   const navHtml = nav.map((n) => `
     <button class="nav-item ${state.page === n.id ? 'active' : ''}" data-page="${n.id}">
       ${n.icon}<span>${n.label}</span>
     </button>`).join('');
-
+ 
   return `
     <div class="app-shell ${state.mobileOpen ? 'sidebar-is-open' : ''}">
       <div class="sidebar ${state.mobileOpen ? 'mobile-open' : ''}" id="sidebar">
@@ -275,21 +275,21 @@ function renderShell() {
         </div>
       </div>
       <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
-
+ 
       <div class="mobile-topbar">
         <div class="mobile-topbar-title" style="display:flex;align-items:center;gap:9px">
           <img src="logo.png" alt="Logo" class="brand-logo brand-logo-xs" />Kehadiran
         </div>
         <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Buka menu">${state.mobileOpen ? ICONS.x : ICONS.menu}</button>
       </div>
-
+ 
       <div class="main-content">${renderPage(isSuper)}</div>
     </div>
     <div id="toast-slot">${toastHtml()}</div>
     ${renderConfirmModal()}
   `;
 }
-
+ 
 function attachShellEvents() {
   document.querySelectorAll('.nav-item').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -306,11 +306,11 @@ function attachShellEvents() {
   if (mobileBtn) mobileBtn.addEventListener('click', () => { state.mobileOpen = !state.mobileOpen; render(); });
   const backdrop = document.getElementById('sidebar-backdrop');
   if (backdrop) backdrop.addEventListener('click', () => { state.mobileOpen = false; render(); });
-
+ 
   attachConfirmModalEvents();
   attachPageEvents();
 }
-
+ 
 /* ---------------------------- PAGE ROUTER ---------------------------- */
 function renderPage(isSuper) {
   switch (state.page) {
@@ -333,7 +333,7 @@ function attachPageEvents() {
     case 'laporan': attachLaporanEvents(); break;
   }
 }
-
+ 
 function pageHeader(eyebrow, title, desc) {
   return `
     <div class="page-header">
@@ -342,13 +342,13 @@ function pageHeader(eyebrow, title, desc) {
       ${desc ? `<p class="page-desc">${desc}</p>` : ''}
     </div>`;
 }
-
+ 
 /* ---------------------------- DASHBOARD ---------------------------- */
 function renderDashboard() {
   const { staff, schedules, attendance } = state;
   const today = todayKey();
   const todaySunday = isSunday(today);
-
+ 
   let hadir = 0, terlambat = 0;
   staff.forEach((s) => {
     const rec = attendance.find((a) => a.staffId === s.id && a.date === today);
@@ -359,7 +359,7 @@ function renderDashboard() {
   });
   const total = staff.length;
   const alpa = todaySunday ? 0 : Math.max(total - hadir - terlambat, 0);
-
+ 
   return `
     ${pageHeader('Ringkasan', 'Dashboard', `Statistik kehadiran • ${formatIndo(today)}`)}
     <div class="stat-row">
@@ -414,7 +414,7 @@ function attachDashboardEvents() {
     },
   });
 }
-
+ 
 /* ---------------------------- TAMBAH ADMIN ---------------------------- */
 function renderTambahAdmin() {
   const admins = state.users.filter((u) => u.role === 'admin');
@@ -484,12 +484,12 @@ function attachTambahAdminEvents() {
     });
   });
 }
-
+ 
 /* ---------------------------- DATA GURU/KARYAWAN ---------------------------- */
 function renderDataStaff() {
   const filtered = state.staff.filter((s) => s.name.toLowerCase().includes(state.staffQuery.toLowerCase()));
   const allChecked = filtered.length > 0 && state.staffSelected.length === filtered.length;
-
+ 
   return `
     ${pageHeader('Super Admin', 'Data Guru & Karyawan', 'Tambahkan atau hapus data guru dan karyawan.')}
     <div class="card card-p-sm" style="margin-bottom:20px">
@@ -590,7 +590,7 @@ function attachDataStaffEvents() {
     render();
   });
 }
-
+ 
 /* ---------------------------- JAM KEHADIRAN ---------------------------- */
 function renderJamKehadiran() {
   return `
@@ -633,7 +633,7 @@ function attachJamKehadiranEvents() {
     });
   });
 }
-
+ 
 /* ---------------------------- INPUT KEHADIRAN (Admin) ---------------------------- */
 function renderInputKehadiran() {
   const today = todayKey();
@@ -698,7 +698,7 @@ function attachInputKehadiranEvents() {
     }
   });
 }
-
+ 
 /* ---------------------------- EKSPOR PDF ---------------------------- */
 let logoDataUrlPromise = null;
 function getLogoDataUrl() {
@@ -721,12 +721,35 @@ function getLogoDataUrl() {
   }
   return logoDataUrlPromise;
 }
-
+ 
 function getPdfCtor() {
   if (window.jspdf && window.jspdf.jsPDF) return window.jspdf.jsPDF;
   return null;
 }
-
+ 
+/* Menunggu jsPDF & plugin autoTable siap (CDN kadang butuh sedikit waktu
+   lebih lama daripada eksekusi app.js, terutama di koneksi lambat). */
+function waitForPdfLibs(timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    (function check() {
+      const JsPDFCtor = getPdfCtor();
+      if (JsPDFCtor) {
+        const hasAutoTable =
+          typeof JsPDFCtor.API?.autoTable === 'function' ||
+          typeof JsPDFCtor.prototype?.autoTable === 'function';
+        resolve({ JsPDFCtor, hasAutoTable });
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        resolve({ JsPDFCtor: null, hasAutoTable: false });
+        return;
+      }
+      setTimeout(check, 150);
+    })();
+  });
+}
+ 
 function drawPdfHeader(doc, logoDataUrl, title, subtitle) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const textX = logoDataUrl ? 34 : 14;
@@ -744,7 +767,7 @@ function drawPdfHeader(doc, logoDataUrl, title, subtitle) {
   doc.setDrawColor(201, 162, 39);
   doc.setLineWidth(0.9);
   doc.line(14, 30, pageWidth - 14, 30);
-
+ 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12.5);
   doc.setTextColor(27, 42, 34);
@@ -759,7 +782,7 @@ function drawPdfHeader(doc, logoDataUrl, title, subtitle) {
   }
   return y + 6;
 }
-
+ 
 function drawPdfFooter(doc) {
   const pageCount = doc.internal.getNumberOfPages();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -774,18 +797,25 @@ function drawPdfFooter(doc) {
     doc.text(`Hal. ${i}/${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' });
   }
 }
-
+ 
 async function exportLaporanHarianPDF() {
-  const JsPDFCtor = getPdfCtor();
-  if (!JsPDFCtor) { notify('Modul PDF belum siap, coba lagi sesaat.', 'error'); return; }
+  const { JsPDFCtor, hasAutoTable } = await waitForPdfLibs();
+  if (!JsPDFCtor) {
+    notify('Library jsPDF gagal dimuat dari CDN. Periksa koneksi internet, pastikan tidak diblokir oleh adblock/firewall, lalu muat ulang halaman.', 'error');
+    return;
+  }
+  if (!hasAutoTable) {
+    notify('Plugin jspdf-autotable gagal dimuat. Pastikan script CDN autotable ada tepat setelah script jsPDF di index.html, lalu muat ulang halaman.', 'error');
+    return;
+  }
   const date = state.reportDate;
   const sunday = isSunday(date);
   const isFuture = date > todayKey();
   const logoDataUrl = await getLogoDataUrl();
-
+ 
   const doc = new JsPDFCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const startY = drawPdfHeader(doc, logoDataUrl, 'Laporan Kehadiran Harian', formatIndo(date));
-
+ 
   if (sunday) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(91, 107, 96);
     doc.text('Hari ini libur (Minggu). Tidak ada data kehadiran.', 14, startY + 2);
@@ -818,15 +848,22 @@ async function exportLaporanHarianPDF() {
       },
     });
   }
-
+ 
   drawPdfFooter(doc);
   doc.save(`Laporan-Harian-${date}.pdf`);
   notify('Laporan harian berhasil diunduh sebagai PDF.');
 }
-
+ 
 async function exportLaporanBulananPDF() {
-  const JsPDFCtor = getPdfCtor();
-  if (!JsPDFCtor) { notify('Modul PDF belum siap, coba lagi sesaat.', 'error'); return; }
+  const { JsPDFCtor, hasAutoTable } = await waitForPdfLibs();
+  if (!JsPDFCtor) {
+    notify('Library jsPDF gagal dimuat dari CDN. Periksa koneksi internet, pastikan tidak diblokir oleh adblock/firewall, lalu muat ulang halaman.', 'error');
+    return;
+  }
+  if (!hasAutoTable) {
+    notify('Plugin jspdf-autotable gagal dimuat. Pastikan script CDN autotable ada tepat setelah script jsPDF di index.html, lalu muat ulang halaman.', 'error');
+    return;
+  }
   const date = state.reportDate;
   const d = new Date(date + 'T00:00:00');
   const year = d.getFullYear(), month = d.getMonth();
@@ -835,10 +872,10 @@ async function exportLaporanBulananPDF() {
   const isCurrentMonth = todayD.getFullYear() === year && todayD.getMonth() === month;
   const lastDay = isCurrentMonth ? todayD.getDate() : (new Date(year, month, 1) > todayD ? 0 : totalDays);
   const logoDataUrl = await getLogoDataUrl();
-
+ 
   const doc = new JsPDFCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const startY = drawPdfHeader(doc, logoDataUrl, 'Laporan Kehadiran Bulanan', `${MONTH_NAMES_ID[month]} ${year}`);
-
+ 
   if (state.staff.length === 0) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(91, 107, 96);
     doc.text('Belum ada data guru/karyawan.', 14, startY + 2);
@@ -861,7 +898,7 @@ async function exportLaporanBulananPDF() {
       return [s.name, String(hariSekolah), String(hadir), String(terlambat), String(alpa)];
     });
     body.push(['TOTAL', '', String(totalHadir), String(totalTerlambat), String(totalAlpa)]);
-
+ 
     doc.autoTable({
       startY,
       head: [['Nama', 'Hari Sekolah', 'Hadir', 'Terlambat', 'Alpa']],
@@ -877,13 +914,13 @@ async function exportLaporanBulananPDF() {
       },
     });
   }
-
+ 
   drawPdfFooter(doc);
   doc.save(`Laporan-Bulanan-${MONTH_NAMES_ID[month]}-${year}.pdf`);
   notify('Laporan bulanan berhasil diunduh sebagai PDF.');
 }
-
-
+ 
+ 
 function renderLaporan() {
   return `
     ${pageHeader('Laporan', 'Laporan Kehadiran', 'Pilih tanggal untuk melihat laporan harian atau bulanan.')}
@@ -939,7 +976,7 @@ function renderLaporanBulanan() {
   const todayD = new Date();
   const isCurrentMonth = todayD.getFullYear() === year && todayD.getMonth() === month;
   const lastDay = isCurrentMonth ? todayD.getDate() : (new Date(year, month, 1) > todayD ? 0 : totalDays);
-
+ 
   const rows = state.staff.map((s) => {
     let hadir = 0, terlambat = 0, alpa = 0, hariSekolah = 0;
     for (let day = 1; day <= lastDay; day++) {
@@ -952,7 +989,7 @@ function renderLaporanBulanan() {
     }
     return { staff: s, hadir, terlambat, alpa, hariSekolah };
   });
-
+ 
   return `
     <div class="card card-p">
       <h3 class="chart-title" style="margin-bottom:4px">${MONTH_NAMES_ID[month]} ${year}</h3>
@@ -999,7 +1036,7 @@ function attachLaporanEvents() {
     }
   });
 }
-
+ 
 /* ---------------------------- CONFIRM MODAL ---------------------------- */
 function renderConfirmModal() {
   if (!state.confirm) return '';
@@ -1021,14 +1058,14 @@ function attachConfirmModalEvents() {
   if (cancel) cancel.addEventListener('click', () => { state.confirm = null; render(); });
   if (ok) ok.addEventListener('click', () => { if (state.confirm) state.confirm.onConfirm(); });
 }
-
+ 
 /* ---------------------------- GLOBAL UX HELPERS ---------------------------- */
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (state.confirm) { state.confirm = null; render(); return; }
   if (state.mobileOpen) { state.mobileOpen = false; render(); }
 });
-
+ 
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
@@ -1036,7 +1073,7 @@ window.addEventListener('resize', () => {
     if (window.innerWidth > 900 && state.mobileOpen) { state.mobileOpen = false; render(); }
   }, 150);
 });
-
+ 
 /* ---------------------------- BOOT (Firebase) ---------------------------- */
 function renderBootScreen(message, isError = false) {
   const app = document.getElementById('app');
@@ -1052,7 +1089,7 @@ function renderBootScreen(message, isError = false) {
       </div>
     </div>`;
 }
-
+ 
 async function boot() {
   if (!firebaseReady) {
     if (firebaseInitError) {
@@ -1089,6 +1126,6 @@ async function boot() {
   }
   render();
 }
-
+ 
 /* ---------------------------- INIT ---------------------------- */
 document.addEventListener('DOMContentLoaded', boot);
