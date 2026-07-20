@@ -12,7 +12,7 @@ const firebaseConfig = {
   projectId: "kehadiran-sekolah-64c04",
   storageBucket: "kehadiran-sekolah-64c04.firebasestorage.app",
   messagingSenderId: "89615570330",
-  appId: "GANTI_DENGAN_APP_ID"
+  appId: "1:89615570330:web:22f82597b07754c4301623"
 };
 /* ========================================================================= */
 
