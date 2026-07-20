@@ -202,7 +202,6 @@ function renderLogin() {
         </div>
         <p id="login-error" class="login-error" style="display:none"></p>
         <button id="login-submit" class="btn btn-primary btn-block" style="padding:12px">Masuk</button>
-        <p class="login-hint">Akun default: <b>superadmin</b> / <b>super123</b></p>
       </div>
       <div id="toast-slot">${toastHtml()}</div>
     </div>
