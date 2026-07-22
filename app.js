@@ -95,7 +95,7 @@ const uid = (p = 'id') => `${p}_${Date.now()}_${Math.random().toString(36).slice
 const escapeHtml = (str) => String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
 const DEFAULT_SCHEDULE = { jamMasuk: '07:00', jamPulang: '14:00' };
-const TOLERANCE_MIN = 5;
+const TOLERANCE_MIN = 0;
 
 function getSchedule(schedules, staffId) {
   return schedules.find((s) => s.staffId === staffId) || DEFAULT_SCHEDULE;
