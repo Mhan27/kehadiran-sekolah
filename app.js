@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: "1:89615570330:web:22f82597b07754c4301623"
 };
 /* ========================================================================= */
- 
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInAnonymously, onAuthStateChanged
@@ -23,7 +23,7 @@ import {
 import {
   getFirestore, collection, doc, setDoc, deleteDoc, getDocs, query, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
- 
+
 let fbApp, auth, db;
 let firebaseReady = false;
 let firebaseInitError = null;
@@ -41,11 +41,11 @@ try{
   firebaseInitError = e;
   console.error("Gagal inisialisasi Firebase:", e);
 }
- 
+
 /* ---------------------------- ICONS (inline SVG) ---------------------------- */
 const icon = (path, size = 16) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
- 
+
 const ICONS = {
   dashboard: icon('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
   userPlus: icon('<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7"/><path d="M19 8v6M16 11h6"/>'),
@@ -64,8 +64,10 @@ const ICONS = {
   search: icon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>'),
   save: icon('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4M8 14h8v6H8z"/>', 14),
   download: icon('<path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>', 16),
+  shield: icon('<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9.5 12l1.8 1.8L15 10"/>'),
+  shieldSmall: icon('<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9.5 12l1.8 1.8L15 10"/>', 13),
 };
- 
+
 /* ---------------------------- SUN MOTIF ---------------------------- */
 function sunMotif(size = 64, opacity = 1, color = 'var(--green-700)') {
   const rays = 16;
@@ -78,7 +80,7 @@ function sunMotif(size = 64, opacity = 1, color = 'var(--green-700)') {
     <g transform="translate(100,100)">${bars}<circle r="34" fill="none" stroke="${color}" stroke-width="3"/></g>
   </svg>`;
 }
- 
+
 /* ---------------------------- HELPERS ---------------------------- */
 const pad2 = (n) => String(n).padStart(2, '0');
 const dateKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -91,12 +93,23 @@ const formatIndo = (dstr) => { const d = new Date(dstr + 'T00:00:00'); return `$
 const daysInMonth = (year, monthIdx) => new Date(year, monthIdx + 1, 0).getDate();
 const uid = (p = 'id') => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const escapeHtml = (str) => String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
- 
+
 const DEFAULT_SCHEDULE = { jamMasuk: '07:00', jamPulang: '14:00' };
 const TOLERANCE_MIN = 5;
- 
+
 function getSchedule(schedules, staffId) {
   return schedules.find((s) => s.staffId === staffId) || DEFAULT_SCHEDULE;
+}
+function getPiketForDate(staffId, date) {
+  return state.piketSchedules.find((p) => p.staffId === staffId && p.date === date) || null;
+}
+/* Jadwal efektif untuk staff pada tanggal tertentu: jadwal piket (custom, per-tanggal)
+   akan menggantikan jadwal biasa jika ada penugasan piket pada tanggal tersebut. */
+function getEffectiveSchedule(staffId, date) {
+  const piket = getPiketForDate(staffId, date);
+  if (piket) return { jamMasuk: piket.jamMasuk, jamPulang: piket.jamPulang, isPiket: true };
+  const reg = getSchedule(state.schedules, staffId);
+  return { jamMasuk: reg.jamMasuk, jamPulang: reg.jamPulang, isPiket: false };
 }
 function computeStatus(jamInput, jamMasuk) {
   if (!jamInput) return 'Alpa';
@@ -114,33 +127,40 @@ function badgeHtml(status) {
   const m = map[status] || map.Alpa;
   return `<span class="badge ${m.cls}">${m.icon}${status}</span>`;
 }
- 
+function piketTagHtml(effSchedule) {
+  if (!effSchedule || !effSchedule.isPiket) return '';
+  return `<span class="badge badge-piket" style="margin-left:6px" title="Jam piket: ${effSchedule.jamMasuk}–${effSchedule.jamPulang}">${ICONS.shieldSmall}Piket</span>`;
+}
+
 /* ---------------------------- STORAGE (Firestore) ---------------------------- */
 async function loadAllData(){
-  const [usersSnap, staffSnap, schedSnap, attSnap] = await Promise.all([
+  const [usersSnap, staffSnap, schedSnap, attSnap, piketSnap] = await Promise.all([
     getDocs(collection(db, 'users')),
     getDocs(collection(db, 'staff')),
     getDocs(collection(db, 'schedules')),
     getDocs(collection(db, 'attendance')),
+    getDocs(collection(db, 'piketSchedules')),
   ]);
   state.users = usersSnap.docs.map((d) => d.data());
   state.staff = staffSnap.docs.map((d) => d.data());
   state.schedules = schedSnap.docs.map((d) => d.data());
   state.attendance = attSnap.docs.map((d) => d.data());
- 
+  state.piketSchedules = piketSnap.docs.map((d) => d.data());
+
   if (state.users.length === 0) {
     const superadmin = { id: uid('usr'), fullName: 'Super Admin', username: 'superadmin', password: 'super123', role: 'superadmin' };
     await setDoc(doc(db, 'users', superadmin.username), superadmin);
     state.users = [superadmin];
   }
 }
- 
+
 /* ---------------------------- APP STATE ---------------------------- */
 const state = {
   users: [],
   staff: [],
   schedules: [],
   attendance: [],
+  piketSchedules: [],
   currentUser: null,
   page: 'dashboard',
   mobileOpen: false,
@@ -151,10 +171,10 @@ const state = {
   staffSelected: [],
   staffQuery: '',
 };
- 
+
 let chartInstance = null;
 let toastTimer = null;
- 
+
 function notify(message, type = 'success') {
   state.toast = { message, type };
   render();
@@ -169,7 +189,7 @@ function toastHtml() {
   if (!state.toast) return '';
   return `<div class="toast ${state.toast.type}">${escapeHtml(state.toast.message)}</div>`;
 }
- 
+
 /* ---------------------------- RENDER ROOT ---------------------------- */
 function render() {
   const app = document.getElementById('app');
@@ -181,7 +201,7 @@ function render() {
   app.innerHTML = renderShell();
   attachShellEvents();
 }
- 
+
 /* ---------------------------- LOGIN PAGE ---------------------------- */
 function renderLogin() {
   return `
@@ -202,6 +222,7 @@ function renderLogin() {
         </div>
         <p id="login-error" class="login-error" style="display:none"></p>
         <button id="login-submit" class="btn btn-primary btn-block" style="padding:12px">Masuk</button>
+        <p class="login-hint">Akun default: <b>superadmin</b> / <b>super123</b></p>
       </div>
       <div id="toast-slot">${toastHtml()}</div>
     </div>
@@ -228,7 +249,7 @@ function attachLoginEvents() {
     document.getElementById(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
   });
 }
- 
+
 /* ---------------------------- SHELL (sidebar + content) ---------------------------- */
 function navForRole(isSuper) {
   return isSuper
@@ -237,6 +258,7 @@ function navForRole(isSuper) {
         { id: 'tambah-admin', label: 'Tambah Admin', icon: ICONS.userPlus },
         { id: 'data-staff', label: 'Data Guru/Karyawan', icon: ICONS.users },
         { id: 'jam-kehadiran', label: 'Jam Kehadiran', icon: ICONS.clock },
+        { id: 'jam-piket', label: 'Jam Piket', icon: ICONS.shield },
         { id: 'laporan', label: 'Laporan', icon: ICONS.clipboard },
       ]
     : [
@@ -245,16 +267,16 @@ function navForRole(isSuper) {
         { id: 'laporan', label: 'Laporan', icon: ICONS.clipboard },
       ];
 }
- 
+
 function renderShell() {
   const isSuper = state.currentUser.role === 'superadmin';
   const nav = navForRole(isSuper);
- 
+
   const navHtml = nav.map((n) => `
     <button class="nav-item ${state.page === n.id ? 'active' : ''}" data-page="${n.id}">
       ${n.icon}<span>${n.label}</span>
     </button>`).join('');
- 
+
   return `
     <div class="app-shell ${state.mobileOpen ? 'sidebar-is-open' : ''}">
       <div class="sidebar ${state.mobileOpen ? 'mobile-open' : ''}" id="sidebar">
@@ -275,21 +297,21 @@ function renderShell() {
         </div>
       </div>
       <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
- 
+
       <div class="mobile-topbar">
         <div class="mobile-topbar-title" style="display:flex;align-items:center;gap:9px">
           <img src="logo.png" alt="Logo" class="brand-logo brand-logo-xs" />Kehadiran
         </div>
         <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Buka menu">${state.mobileOpen ? ICONS.x : ICONS.menu}</button>
       </div>
- 
+
       <div class="main-content">${renderPage(isSuper)}</div>
     </div>
     <div id="toast-slot">${toastHtml()}</div>
     ${renderConfirmModal()}
   `;
 }
- 
+
 function attachShellEvents() {
   document.querySelectorAll('.nav-item').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -306,11 +328,11 @@ function attachShellEvents() {
   if (mobileBtn) mobileBtn.addEventListener('click', () => { state.mobileOpen = !state.mobileOpen; render(); });
   const backdrop = document.getElementById('sidebar-backdrop');
   if (backdrop) backdrop.addEventListener('click', () => { state.mobileOpen = false; render(); });
- 
+
   attachConfirmModalEvents();
   attachPageEvents();
 }
- 
+
 /* ---------------------------- PAGE ROUTER ---------------------------- */
 function renderPage(isSuper) {
   switch (state.page) {
@@ -318,6 +340,7 @@ function renderPage(isSuper) {
     case 'tambah-admin': return isSuper ? renderTambahAdmin() : renderDashboard();
     case 'data-staff': return isSuper ? renderDataStaff() : renderDashboard();
     case 'jam-kehadiran': return isSuper ? renderJamKehadiran() : renderDashboard();
+    case 'jam-piket': return isSuper ? renderJamPiket() : renderDashboard();
     case 'input-kehadiran': return !isSuper ? renderInputKehadiran() : renderDashboard();
     case 'laporan': return renderLaporan();
     default: return renderDashboard();
@@ -329,11 +352,12 @@ function attachPageEvents() {
     case 'tambah-admin': attachTambahAdminEvents(); break;
     case 'data-staff': attachDataStaffEvents(); break;
     case 'jam-kehadiran': attachJamKehadiranEvents(); break;
+    case 'jam-piket': attachJamPiketEvents(); break;
     case 'input-kehadiran': attachInputKehadiranEvents(); break;
     case 'laporan': attachLaporanEvents(); break;
   }
 }
- 
+
 function pageHeader(eyebrow, title, desc) {
   return `
     <div class="page-header">
@@ -342,24 +366,25 @@ function pageHeader(eyebrow, title, desc) {
       ${desc ? `<p class="page-desc">${desc}</p>` : ''}
     </div>`;
 }
- 
+
 /* ---------------------------- DASHBOARD ---------------------------- */
 function renderDashboard() {
   const { staff, schedules, attendance } = state;
   const today = todayKey();
   const todaySunday = isSunday(today);
- 
+
   let hadir = 0, terlambat = 0;
   staff.forEach((s) => {
     const rec = attendance.find((a) => a.staffId === s.id && a.date === today);
     if (rec) {
-      const st = computeStatus(rec.jamHadir, getSchedule(schedules, s.id).jamMasuk);
+      const st = computeStatus(rec.jamHadir, getEffectiveSchedule(s.id, today).jamMasuk);
       if (st === 'Hadir') hadir++; else if (st === 'Terlambat') terlambat++;
     }
   });
   const total = staff.length;
   const alpa = todaySunday ? 0 : Math.max(total - hadir - terlambat, 0);
- 
+  const piketToday = state.piketSchedules.filter((p) => p.date === today);
+
   return `
     ${pageHeader('Ringkasan', 'Dashboard', `Statistik kehadiran • ${formatIndo(today)}`)}
     <div class="stat-row">
@@ -371,6 +396,20 @@ function renderDashboard() {
         <div class="stat-value" style="color:var(--red)">${todaySunday ? '—' : alpa}</div>
         ${todaySunday ? `<div class="stat-sub">Hari libur (Minggu)</div>` : ''}
       </div>
+    </div>
+    <div class="card card-p" style="margin-bottom:20px">
+      <h3 class="chart-title" style="display:flex;align-items:center;gap:8px">${ICONS.shield}Guru Piket Hari Ini</h3>
+      ${piketToday.length === 0 ? `<div class="empty-state" style="padding:8px 4px">Tidak ada penugasan piket untuk hari ini.</div>` : `
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${piketToday.map((p) => {
+            const s = staff.find((x) => x.id === p.staffId);
+            return `<div class="list-row">
+              <div><div class="list-row-name">${escapeHtml(s ? s.name : '(data terhapus)')}</div><div class="list-row-sub">Jam piket: ${p.jamMasuk} – ${p.jamPulang}</div></div>
+              <span class="badge badge-piket">${ICONS.shieldSmall}Piket</span>
+            </div>`;
+          }).join('')}
+        </div>
+      `}
     </div>
     <div class="card chart-card">
       <h3 class="chart-title">Kehadiran 7 Hari Terakhir</h3>
@@ -389,7 +428,7 @@ function attachDashboardEvents() {
       staff.forEach((s) => {
         const rec = attendance.find((a) => a.staffId === s.id && a.date === key);
         if (rec) {
-          const st = computeStatus(rec.jamHadir, getSchedule(schedules, s.id).jamMasuk);
+          const st = computeStatus(rec.jamHadir, getEffectiveSchedule(s.id, key).jamMasuk);
           if (st === 'Hadir') hadir++; else terlambat++;
         }
       });
@@ -414,7 +453,7 @@ function attachDashboardEvents() {
     },
   });
 }
- 
+
 /* ---------------------------- TAMBAH ADMIN ---------------------------- */
 function renderTambahAdmin() {
   const admins = state.users.filter((u) => u.role === 'admin');
@@ -484,12 +523,12 @@ function attachTambahAdminEvents() {
     });
   });
 }
- 
+
 /* ---------------------------- DATA GURU/KARYAWAN ---------------------------- */
 function renderDataStaff() {
   const filtered = state.staff.filter((s) => s.name.toLowerCase().includes(state.staffQuery.toLowerCase()));
   const allChecked = filtered.length > 0 && state.staffSelected.length === filtered.length;
- 
+
   return `
     ${pageHeader('Super Admin', 'Data Guru & Karyawan', 'Tambahkan atau hapus data guru dan karyawan.')}
     <div class="card card-p-sm" style="margin-bottom:20px">
@@ -590,7 +629,7 @@ function attachDataStaffEvents() {
     render();
   });
 }
- 
+
 /* ---------------------------- JAM KEHADIRAN ---------------------------- */
 function renderJamKehadiran() {
   return `
@@ -633,7 +672,98 @@ function attachJamKehadiranEvents() {
     });
   });
 }
- 
+
+/* ---------------------------- JAM PIKET (GURU PIKET) ---------------------------- */
+function renderJamPiket() {
+  const sorted = [...state.piketSchedules].sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  const today = todayKey();
+
+  return `
+    ${pageHeader('Super Admin', 'Jam Piket (Guru Piket)', 'Tetapkan jam kehadiran khusus untuk guru piket pada tanggal tertentu. Jam ini akan menggantikan jam kehadiran biasa hanya pada tanggal yang dipilih.')}
+    <div class="grid-2">
+      <div class="card card-p">
+        <h3 class="chart-title">Tetapkan Piket</h3>
+        <div class="field"><span class="field-label">Tanggal Piket</span><input id="jp-date" type="date" class="input" value="${today}" /></div>
+        <div class="field"><span class="field-label">Nama Guru/Karyawan</span>
+          <select id="jp-staff" class="input">
+            <option value="">Pilih guru/karyawan...</option>
+            ${state.staff.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><span class="field-label">Jam Masuk Piket</span><input id="jp-masuk" type="time" class="input" value="06:30" /></div>
+        <div class="field"><span class="field-label">Jam Pulang Piket</span><input id="jp-pulang" type="time" class="input" value="15:00" /></div>
+        <button id="jp-submit" class="btn btn-primary btn-block">${ICONS.plus}Tetapkan Piket</button>
+      </div>
+
+      <div class="card card-p">
+        <h3 class="chart-title">Daftar Penugasan Piket (${sorted.length})</h3>
+        ${sorted.length === 0 ? `<div class="empty-state">Belum ada penugasan piket. Tambahkan lewat form di sebelah kiri.</div>` : `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tanggal</th><th>Nama</th><th>Jam Masuk</th><th>Jam Pulang</th><th></th></tr></thead>
+          <tbody>
+            ${sorted.map((p) => {
+              const s = state.staff.find((x) => x.id === p.staffId);
+              return `<tr>
+                <td data-label="Tanggal">${formatIndo(p.date)}</td>
+                <td data-label="Nama" style="font-weight:700">${escapeHtml(s ? s.name : '(data terhapus)')}</td>
+                <td data-label="Jam Masuk">${p.jamMasuk}</td>
+                <td data-label="Jam Pulang">${p.jamPulang}</td>
+                <td data-label=""><button class="icon-btn" data-del-piket="${p.staffId}_${p.date}">${ICONS.trash}</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>`}
+      </div>
+    </div>
+  `;
+}
+function attachJamPiketEvents() {
+  document.getElementById('jp-submit').addEventListener('click', async () => {
+    const date = document.getElementById('jp-date').value;
+    const staffId = document.getElementById('jp-staff').value;
+    const jamMasuk = document.getElementById('jp-masuk').value;
+    const jamPulang = document.getElementById('jp-pulang').value;
+    if (!date || !staffId || !jamMasuk || !jamPulang) { notify('Semua kolom wajib diisi.', 'error'); return; }
+    const entry = { staffId, date, jamMasuk, jamPulang };
+    const docId = `${staffId}_${date}`;
+    try {
+      await setDoc(doc(db, 'piketSchedules', docId), entry);
+      state.piketSchedules = [...state.piketSchedules.filter((p) => !(p.staffId === staffId && p.date === date)), entry];
+      notify('Jadwal piket berhasil ditetapkan.');
+      render();
+    } catch (e) {
+      console.error('Gagal menyimpan jadwal piket:', e);
+      notify('Gagal menyimpan ke server: ' + e.message, 'error');
+    }
+  });
+  document.querySelectorAll('[data-del-piket]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const docId = btn.dataset.delPiket;
+      const [staffId, date] = [docId.slice(0, docId.lastIndexOf('_')), docId.slice(docId.lastIndexOf('_') + 1)];
+      const s = state.staff.find((x) => x.id === staffId);
+      state.confirm = {
+        title: 'Hapus jadwal piket?',
+        body: `Penugasan piket untuk "${escapeHtml(s ? s.name : 'guru ini')}" pada ${formatIndo(date)} akan dihapus.`,
+        onConfirm: async () => {
+          try {
+            await deleteDoc(doc(db, 'piketSchedules', docId));
+            state.piketSchedules = state.piketSchedules.filter((p) => !(p.staffId === staffId && p.date === date));
+            state.confirm = null;
+            notify('Jadwal piket dihapus.');
+            render();
+          } catch (e) {
+            console.error('Gagal menghapus jadwal piket:', e);
+            state.confirm = null;
+            notify('Gagal menghapus di server: ' + e.message, 'error');
+            render();
+          }
+        },
+      };
+      render();
+    });
+  });
+}
+
 /* ---------------------------- INPUT KEHADIRAN (Admin) ---------------------------- */
 function renderInputKehadiran() {
   const today = todayKey();
@@ -658,10 +788,11 @@ function renderInputKehadiran() {
           todayRecords.map((r) => {
             const s = state.staff.find((x) => x.id === r.staffId);
             if (!s) return '';
-            const status = computeStatus(r.jamHadir, getSchedule(state.schedules, s.id).jamMasuk);
+            const eff = getEffectiveSchedule(s.id, r.date);
+            const status = computeStatus(r.jamHadir, eff.jamMasuk);
             return `<div class="list-row">
               <div><div class="list-row-name">${escapeHtml(s.name)}</div><div class="list-row-sub">Jam ${r.jamHadir}</div></div>
-              ${badgeHtml(status)}
+              <div>${badgeHtml(status)}${piketTagHtml(eff)}</div>
             </div>`;
           }).join('')}
       </div>
@@ -673,9 +804,11 @@ function attachInputKehadiranEvents() {
   const hint = document.getElementById('ik-hint');
   staffSelect.addEventListener('change', () => {
     if (staffSelect.value) {
-      const sch = getSchedule(state.schedules, staffSelect.value);
+      const eff = getEffectiveSchedule(staffSelect.value, todayKey());
       hint.style.display = 'block';
-      hint.innerHTML = `Jam masuk terjadwal: <b>${sch.jamMasuk}</b> (toleransi ${TOLERANCE_MIN} menit)`;
+      hint.innerHTML = eff.isPiket
+        ? `<b>Guru piket hari ini.</b> Jam masuk piket: <b>${eff.jamMasuk}</b> (toleransi ${TOLERANCE_MIN} menit)`
+        : `Jam masuk terjadwal: <b>${eff.jamMasuk}</b> (toleransi ${TOLERANCE_MIN} menit)`;
     } else {
       hint.style.display = 'none';
     }
@@ -698,7 +831,7 @@ function attachInputKehadiranEvents() {
     }
   });
 }
- 
+
 /* ---------------------------- EKSPOR PDF ---------------------------- */
 let logoDataUrlPromise = null;
 function getLogoDataUrl() {
@@ -721,35 +854,12 @@ function getLogoDataUrl() {
   }
   return logoDataUrlPromise;
 }
- 
+
 function getPdfCtor() {
   if (window.jspdf && window.jspdf.jsPDF) return window.jspdf.jsPDF;
   return null;
 }
- 
-/* Menunggu jsPDF & plugin autoTable siap (CDN kadang butuh sedikit waktu
-   lebih lama daripada eksekusi app.js, terutama di koneksi lambat). */
-function waitForPdfLibs(timeoutMs = 5000) {
-  return new Promise((resolve) => {
-    const start = Date.now();
-    (function check() {
-      const JsPDFCtor = getPdfCtor();
-      if (JsPDFCtor) {
-        const hasAutoTable =
-          typeof JsPDFCtor.API?.autoTable === 'function' ||
-          typeof JsPDFCtor.prototype?.autoTable === 'function';
-        resolve({ JsPDFCtor, hasAutoTable });
-        return;
-      }
-      if (Date.now() - start > timeoutMs) {
-        resolve({ JsPDFCtor: null, hasAutoTable: false });
-        return;
-      }
-      setTimeout(check, 150);
-    })();
-  });
-}
- 
+
 function drawPdfHeader(doc, logoDataUrl, title, subtitle) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const textX = logoDataUrl ? 34 : 14;
@@ -767,7 +877,7 @@ function drawPdfHeader(doc, logoDataUrl, title, subtitle) {
   doc.setDrawColor(201, 162, 39);
   doc.setLineWidth(0.9);
   doc.line(14, 30, pageWidth - 14, 30);
- 
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12.5);
   doc.setTextColor(27, 42, 34);
@@ -782,7 +892,7 @@ function drawPdfHeader(doc, logoDataUrl, title, subtitle) {
   }
   return y + 6;
 }
- 
+
 function drawPdfFooter(doc) {
   const pageCount = doc.internal.getNumberOfPages();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -797,25 +907,18 @@ function drawPdfFooter(doc) {
     doc.text(`Hal. ${i}/${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' });
   }
 }
- 
+
 async function exportLaporanHarianPDF() {
-  const { JsPDFCtor, hasAutoTable } = await waitForPdfLibs();
-  if (!JsPDFCtor) {
-    notify('Library jsPDF gagal dimuat dari CDN. Periksa koneksi internet, pastikan tidak diblokir oleh adblock/firewall, lalu muat ulang halaman.', 'error');
-    return;
-  }
-  if (!hasAutoTable) {
-    notify('Plugin jspdf-autotable gagal dimuat. Pastikan script CDN autotable ada tepat setelah script jsPDF di index.html, lalu muat ulang halaman.', 'error');
-    return;
-  }
+  const JsPDFCtor = getPdfCtor();
+  if (!JsPDFCtor) { notify('Modul PDF belum siap, coba lagi sesaat.', 'error'); return; }
   const date = state.reportDate;
   const sunday = isSunday(date);
   const isFuture = date > todayKey();
   const logoDataUrl = await getLogoDataUrl();
- 
+
   const doc = new JsPDFCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const startY = drawPdfHeader(doc, logoDataUrl, 'Laporan Kehadiran Harian', formatIndo(date));
- 
+
   if (sunday) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(91, 107, 96);
     doc.text('Hari ini libur (Minggu). Tidak ada data kehadiran.', 14, startY + 2);
@@ -825,12 +928,13 @@ async function exportLaporanHarianPDF() {
   } else {
     const body = state.staff.map((s) => {
       const rec = state.attendance.find((a) => a.staffId === s.id && a.date === date);
-      const status = isFuture ? '—' : computeStatus(rec?.jamHadir, getSchedule(state.schedules, s.id).jamMasuk);
-      return [s.name, s.position, rec?.jamHadir || '—', status];
+      const eff = getEffectiveSchedule(s.id, date);
+      const status = isFuture ? '—' : computeStatus(rec?.jamHadir, eff.jamMasuk);
+      return [s.name, s.position, rec?.jamHadir || '—', status, eff.isPiket ? `Ya (${eff.jamMasuk}-${eff.jamPulang})` : '—'];
     });
     doc.autoTable({
       startY,
-      head: [['Nama', 'Jabatan', 'Jam Hadir', 'Status']],
+      head: [['Nama', 'Jabatan', 'Jam Hadir', 'Status', 'Piket']],
       body,
       theme: 'grid',
       margin: { left: 14, right: 14 },
@@ -845,25 +949,22 @@ async function exportLaporanHarianPDF() {
           else if (v === 'Alpa') dataCell.cell.styles.textColor = [179, 38, 30];
           dataCell.cell.styles.fontStyle = 'bold';
         }
+        if (dataCell.section === 'body' && dataCell.column.index === 4 && dataCell.cell.raw !== '—') {
+          dataCell.cell.styles.textColor = [154, 107, 0];
+          dataCell.cell.styles.fontStyle = 'bold';
+        }
       },
     });
   }
- 
+
   drawPdfFooter(doc);
   doc.save(`Laporan-Harian-${date}.pdf`);
   notify('Laporan harian berhasil diunduh sebagai PDF.');
 }
- 
+
 async function exportLaporanBulananPDF() {
-  const { JsPDFCtor, hasAutoTable } = await waitForPdfLibs();
-  if (!JsPDFCtor) {
-    notify('Library jsPDF gagal dimuat dari CDN. Periksa koneksi internet, pastikan tidak diblokir oleh adblock/firewall, lalu muat ulang halaman.', 'error');
-    return;
-  }
-  if (!hasAutoTable) {
-    notify('Plugin jspdf-autotable gagal dimuat. Pastikan script CDN autotable ada tepat setelah script jsPDF di index.html, lalu muat ulang halaman.', 'error');
-    return;
-  }
+  const JsPDFCtor = getPdfCtor();
+  if (!JsPDFCtor) { notify('Modul PDF belum siap, coba lagi sesaat.', 'error'); return; }
   const date = state.reportDate;
   const d = new Date(date + 'T00:00:00');
   const year = d.getFullYear(), month = d.getMonth();
@@ -872,10 +973,10 @@ async function exportLaporanBulananPDF() {
   const isCurrentMonth = todayD.getFullYear() === year && todayD.getMonth() === month;
   const lastDay = isCurrentMonth ? todayD.getDate() : (new Date(year, month, 1) > todayD ? 0 : totalDays);
   const logoDataUrl = await getLogoDataUrl();
- 
+
   const doc = new JsPDFCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const startY = drawPdfHeader(doc, logoDataUrl, 'Laporan Kehadiran Bulanan', `${MONTH_NAMES_ID[month]} ${year}`);
- 
+
   if (state.staff.length === 0) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(91, 107, 96);
     doc.text('Belum ada data guru/karyawan.', 14, startY + 2);
@@ -885,23 +986,25 @@ async function exportLaporanBulananPDF() {
   } else {
     let totalHadir = 0, totalTerlambat = 0, totalAlpa = 0;
     const body = state.staff.map((s) => {
-      let hadir = 0, terlambat = 0, alpa = 0, hariSekolah = 0;
+      let hadir = 0, terlambat = 0, alpa = 0, hariSekolah = 0, hariPiket = 0;
       for (let day = 1; day <= lastDay; day++) {
         const key = `${year}-${pad2(month + 1)}-${pad2(day)}`;
         if (isSunday(key)) continue;
         hariSekolah++;
+        const eff = getEffectiveSchedule(s.id, key);
+        if (eff.isPiket) hariPiket++;
         const rec = state.attendance.find((a) => a.staffId === s.id && a.date === key);
-        const status = computeStatus(rec?.jamHadir, getSchedule(state.schedules, s.id).jamMasuk);
+        const status = computeStatus(rec?.jamHadir, eff.jamMasuk);
         if (status === 'Hadir') hadir++; else if (status === 'Terlambat') terlambat++; else alpa++;
       }
       totalHadir += hadir; totalTerlambat += terlambat; totalAlpa += alpa;
-      return [s.name, String(hariSekolah), String(hadir), String(terlambat), String(alpa)];
+      return [s.name, String(hariSekolah), String(hadir), String(terlambat), String(alpa), hariPiket > 0 ? String(hariPiket) : '—'];
     });
-    body.push(['TOTAL', '', String(totalHadir), String(totalTerlambat), String(totalAlpa)]);
- 
+    body.push(['TOTAL', '', String(totalHadir), String(totalTerlambat), String(totalAlpa), '']);
+
     doc.autoTable({
       startY,
-      head: [['Nama', 'Hari Sekolah', 'Hadir', 'Terlambat', 'Alpa']],
+      head: [['Nama', 'Hari Sekolah', 'Hadir', 'Terlambat', 'Alpa', 'Hari Piket']],
       body,
       theme: 'grid',
       margin: { left: 14, right: 14 },
@@ -914,13 +1017,13 @@ async function exportLaporanBulananPDF() {
       },
     });
   }
- 
+
   drawPdfFooter(doc);
   doc.save(`Laporan-Bulanan-${MONTH_NAMES_ID[month]}-${year}.pdf`);
   notify('Laporan bulanan berhasil diunduh sebagai PDF.');
 }
- 
- 
+
+
 function renderLaporan() {
   return `
     ${pageHeader('Laporan', 'Laporan Kehadiran', 'Pilih tanggal untuk melihat laporan harian atau bulanan.')}
@@ -955,12 +1058,13 @@ function renderLaporanHarian() {
         <tbody>
           ${state.staff.map((s) => {
             const rec = state.attendance.find((a) => a.staffId === s.id && a.date === date);
-            const status = isFuture ? null : computeStatus(rec?.jamHadir, getSchedule(state.schedules, s.id).jamMasuk);
+            const eff = getEffectiveSchedule(s.id, date);
+            const status = isFuture ? null : computeStatus(rec?.jamHadir, eff.jamMasuk);
             return `<tr>
               <td data-label="Nama" style="font-weight:700">${escapeHtml(s.name)}</td>
               <td data-label="Jabatan">${escapeHtml(s.position)}</td>
               <td data-label="Jam Hadir">${rec?.jamHadir || '—'}</td>
-              <td data-label="Status">${status ? badgeHtml(status) : '<span style="color:var(--ink-soft)">—</span>'}</td>
+              <td data-label="Status">${status ? badgeHtml(status) : '<span style="color:var(--ink-soft)">—</span>'}${!isFuture ? piketTagHtml(eff) : ''}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -976,27 +1080,29 @@ function renderLaporanBulanan() {
   const todayD = new Date();
   const isCurrentMonth = todayD.getFullYear() === year && todayD.getMonth() === month;
   const lastDay = isCurrentMonth ? todayD.getDate() : (new Date(year, month, 1) > todayD ? 0 : totalDays);
- 
+
   const rows = state.staff.map((s) => {
-    let hadir = 0, terlambat = 0, alpa = 0, hariSekolah = 0;
+    let hadir = 0, terlambat = 0, alpa = 0, hariSekolah = 0, hariPiket = 0;
     for (let day = 1; day <= lastDay; day++) {
       const key = `${year}-${pad2(month + 1)}-${pad2(day)}`;
       if (isSunday(key)) continue;
       hariSekolah++;
+      const eff = getEffectiveSchedule(s.id, key);
+      if (eff.isPiket) hariPiket++;
       const rec = state.attendance.find((a) => a.staffId === s.id && a.date === key);
-      const status = computeStatus(rec?.jamHadir, getSchedule(state.schedules, s.id).jamMasuk);
+      const status = computeStatus(rec?.jamHadir, eff.jamMasuk);
       if (status === 'Hadir') hadir++; else if (status === 'Terlambat') terlambat++; else alpa++;
     }
-    return { staff: s, hadir, terlambat, alpa, hariSekolah };
+    return { staff: s, hadir, terlambat, alpa, hariSekolah, hariPiket };
   });
- 
+
   return `
     <div class="card card-p">
       <h3 class="chart-title" style="margin-bottom:4px">${MONTH_NAMES_ID[month]} ${year}</h3>
       <p class="page-desc" style="margin-bottom:16px">${lastDay === 0 ? 'Bulan ini belum berjalan.' : `Rekap hingga tanggal ${lastDay} (hari Minggu tidak dihitung).`}</p>
       ${state.staff.length === 0 ? `<div class="empty-state">Belum ada data guru/karyawan.</div>` : lastDay === 0 ? '' : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Nama</th><th>Hari Sekolah</th><th>Hadir</th><th>Terlambat</th><th>Alpa</th></tr></thead>
+        <thead><tr><th>Nama</th><th>Hari Sekolah</th><th>Hadir</th><th>Terlambat</th><th>Alpa</th><th>Hari Piket</th></tr></thead>
         <tbody>
           ${rows.map((r) => `<tr>
             <td data-label="Nama" style="font-weight:700">${escapeHtml(r.staff.name)}</td>
@@ -1004,6 +1110,7 @@ function renderLaporanBulanan() {
             <td data-label="Hadir" style="color:var(--green-700);font-weight:700">${r.hadir}</td>
             <td data-label="Terlambat" style="color:var(--amber);font-weight:700">${r.terlambat}</td>
             <td data-label="Alpa" style="color:var(--red);font-weight:700">${r.alpa}</td>
+            <td data-label="Hari Piket">${r.hariPiket > 0 ? `<span class="badge badge-piket">${ICONS.shieldSmall}${r.hariPiket} hari</span>` : '<span style="color:var(--ink-soft)">—</span>'}</td>
           </tr>`).join('')}
         </tbody>
       </table></div>`}
@@ -1036,7 +1143,7 @@ function attachLaporanEvents() {
     }
   });
 }
- 
+
 /* ---------------------------- CONFIRM MODAL ---------------------------- */
 function renderConfirmModal() {
   if (!state.confirm) return '';
@@ -1058,14 +1165,14 @@ function attachConfirmModalEvents() {
   if (cancel) cancel.addEventListener('click', () => { state.confirm = null; render(); });
   if (ok) ok.addEventListener('click', () => { if (state.confirm) state.confirm.onConfirm(); });
 }
- 
+
 /* ---------------------------- GLOBAL UX HELPERS ---------------------------- */
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (state.confirm) { state.confirm = null; render(); return; }
   if (state.mobileOpen) { state.mobileOpen = false; render(); }
 });
- 
+
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
@@ -1073,7 +1180,7 @@ window.addEventListener('resize', () => {
     if (window.innerWidth > 900 && state.mobileOpen) { state.mobileOpen = false; render(); }
   }, 150);
 });
- 
+
 /* ---------------------------- BOOT (Firebase) ---------------------------- */
 function renderBootScreen(message, isError = false) {
   const app = document.getElementById('app');
@@ -1089,7 +1196,7 @@ function renderBootScreen(message, isError = false) {
       </div>
     </div>`;
 }
- 
+
 async function boot() {
   if (!firebaseReady) {
     if (firebaseInitError) {
@@ -1126,6 +1233,6 @@ async function boot() {
   }
   render();
 }
- 
+
 /* ---------------------------- INIT ---------------------------- */
 document.addEventListener('DOMContentLoaded', boot);
