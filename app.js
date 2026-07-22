@@ -222,6 +222,7 @@ function renderLogin() {
         </div>
         <p id="login-error" class="login-error" style="display:none"></p>
         <button id="login-submit" class="btn btn-primary btn-block" style="padding:12px">Masuk</button>
+        <p class="login-hint">Akun default: <b>superadmin</b> / <b>super123</b></p>
       </div>
       <div id="toast-slot">${toastHtml()}</div>
     </div>
@@ -805,9 +806,10 @@ function attachInputKehadiranEvents() {
     if (staffSelect.value) {
       const eff = getEffectiveSchedule(staffSelect.value, todayKey());
       hint.style.display = 'block';
+      const toleransiText = TOLERANCE_MIN > 0 ? `(toleransi ${TOLERANCE_MIN} menit)` : `(tanpa toleransi)`;
       hint.innerHTML = eff.isPiket
-        ? `<b>Guru piket hari ini.</b> Jam masuk piket: <b>${eff.jamMasuk}</b> (toleransi ${TOLERANCE_MIN} menit)`
-        : `Jam masuk terjadwal: <b>${eff.jamMasuk}</b> (toleransi ${TOLERANCE_MIN} menit)`;
+        ? `<b>Guru piket hari ini.</b> Jam masuk piket: <b>${eff.jamMasuk}</b> ${toleransiText}`
+        : `Jam masuk terjadwal: <b>${eff.jamMasuk}</b> ${toleransiText}`;
     } else {
       hint.style.display = 'none';
     }
@@ -859,6 +861,24 @@ function getPdfCtor() {
   return null;
 }
 
+function waitForPdfCtor(timeoutMs = 6000, intervalMs = 200) {
+  return new Promise((resolve) => {
+    const existing = getPdfCtor();
+    if (existing) { resolve(existing); return; }
+    const start = Date.now();
+    const timer = setInterval(() => {
+      const ctor = getPdfCtor();
+      if (ctor) {
+        clearInterval(timer);
+        resolve(ctor);
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(timer);
+        resolve(null);
+      }
+    }, intervalMs);
+  });
+}
+
 function drawPdfHeader(doc, logoDataUrl, title, subtitle) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const textX = logoDataUrl ? 34 : 14;
@@ -908,8 +928,11 @@ function drawPdfFooter(doc) {
 }
 
 async function exportLaporanHarianPDF() {
-  const JsPDFCtor = getPdfCtor();
-  if (!JsPDFCtor) { notify('Modul PDF belum siap, coba lagi sesaat.', 'error'); return; }
+  const JsPDFCtor = await waitForPdfCtor();
+  if (!JsPDFCtor) {
+    notify('Modul PDF gagal dimuat. Periksa koneksi internet Anda (skrip diambil dari cdnjs.cloudflare.com) — kalau jaringan diblokir firewall/proxy sekolah, coba jaringan lain, lalu muat ulang halaman.', 'error');
+    return;
+  }
   const date = state.reportDate;
   const sunday = isSunday(date);
   const isFuture = date > todayKey();
@@ -962,8 +985,11 @@ async function exportLaporanHarianPDF() {
 }
 
 async function exportLaporanBulananPDF() {
-  const JsPDFCtor = getPdfCtor();
-  if (!JsPDFCtor) { notify('Modul PDF belum siap, coba lagi sesaat.', 'error'); return; }
+  const JsPDFCtor = await waitForPdfCtor();
+  if (!JsPDFCtor) {
+    notify('Modul PDF gagal dimuat. Periksa koneksi internet Anda (skrip diambil dari cdnjs.cloudflare.com) — kalau jaringan diblokir firewall/proxy sekolah, coba jaringan lain, lalu muat ulang halaman.', 'error');
+    return;
+  }
   const date = state.reportDate;
   const d = new Date(date + 'T00:00:00');
   const year = d.getFullYear(), month = d.getMonth();
